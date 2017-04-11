@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: helpers/httpApi.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: helpers/httpApi.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+/**
+ * Middleware functions to add cors, log errors and conections, send status
+ * and setup router
+ * @module helper/httpApi
+ */
+
+var extend = require('extend');
+var checkIpInList = require('./checkIpInList');
+
+/**
+ * @namespace middleware
+ */
+var middleware = {
+	/**
+	 * Add CORS header to all requests
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	cors: function (req, res, next) {
+		res.header('Access-Control-Allow-Origin', '*');
+		res.header('Access-Control-Allow-Headers', 'Origin, X-Objected-With, Content-Type, Accept');
+		return next();
+	},
+
+	/**
+	 * Log all api errors
+	 * @param {Logger} logger
+	 * @param {Error} err
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	errorLogger: function (logger, err, req, res, next) {
+		if (!err) { return next(); }
+		logger.error('API error ' + req.url, err.message);
+		res.status(500).send({success: false, error: 'API error: ' + err.message});
+	},
+
+	/**
+	 * Log api client connections
+	 * @param {Logger} logger
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	logClientConnections: function (logger, req, res, next) {
+		// Log client connections
+		logger.log(req.method + ' ' + req.url + ' from ' + req.ip);
+
+		return next();
+	},
+
+	/**
+	 * Resend error msg when blockchain is not loaded
+	 * @param {Function} isLoaded
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	blockchainReady: function (isLoaded, req, res, next) {
+		if (isLoaded()) { return next(); }
+		res.status(500).send({success: false, error: 'Blockchain is loading'});
+	},
+
+	/**
+	 * Resend error if API endpoint doesn't exists
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	notFound: function (req, res, next) {
+		return res.status(500).send({success: false, error: 'API endpoint not found'});
+	},
+
+	/**
+	 * Use req.sanitize for particular endpoint
+	 * @param {String} property
+	 * @param {Object} schema
+	 * @param {Function} cb
+	 * @return {Function} sanitize middleware
+	 */
+	sanitize: function (property, schema, cb) {
+		return function (req, res, next) {
+			req.sanitize(req[property], schema, function (err, report, sanitized) {
+				if (!report.isValid) {
+					return res.json({success: false, error: report.issues});
+				}
+				return cb(sanitized, respond.bind(null, res));
+			});
+		};
+	},
+
+	/**
+	 * Attach header to response
+	 * @param {string} headerKey
+	 * @param {string} headerValue
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	attachResponseHeader: function (headerKey, headerValue, req, res, next) {
+		res.setHeader(headerKey, headerValue);
+		return next();
+	},
+
+	/**
+	 * Apply rules of public / internal API described in config.json
+	 * @param {Object} config
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	applyAPIAccessRules: function (config, req, res, next) {
+		if (req.url.match(/^\/peer[\/]?.*/)) {
+			var internalApiEnabled = config.peers.enabled &amp;&amp; !checkIpInList(config.peers.access.blackList, req.ip, false);
+			rejectDisabled(internalApiEnabled);
+		} else {
+			var publicApiEnabled = config.api.enabled &amp;&amp; (config.api.access.public || checkIpInList(config.api.access.whiteList, req.ip, false));
+			rejectDisabled(publicApiEnabled);
+		}
+
+		function rejectDisabled (apiEnabled) {
+			return apiEnabled ? next() : res.status(500).send({success: false, error: 'API endpoint disabled'});
+		}
+	},
+
+	/**
+	 * Pass getter for headers and assign then to response
+	 * @param {Function} getHeaders
+	 * @param {Object} req
+	 * @param {Object} res
+	 * @param {Function} next
+	 */
+	attachResponseHeaders: function (getHeaders, req, res, next) {
+		res.set(getHeaders());
+		return next();
+	}
+};
+
+/**
+ * Add 'success' field to every response and attach error message if needed
+ * @param {Object} res
+ * @param {String} err
+ * @param {Object} response
+ */
+function respond (res, err, response) {
+	if (err) {
+		res.json({'success': false, 'error': err});
+	} else {
+		return res.json(extend({}, {'success': true}, response));
+	}
+}
+
+/**
+ * Register router in express app using default middleware
+ * @param {String} route
+ * @param {Object} app
+ * @param {Object} router
+ * @param {Function} isLoaded
+ */
+function registerEndpoint (route, app, router, isLoaded) {
+	router.use(middleware.notFound);
+	router.use(middleware.blockchainReady.bind(null, isLoaded));
+	app.use(route, router);
+}
+
+module.exports = {
+	middleware: middleware,
+	registerEndpoint: registerEndpoint,
+	respond: respond
+};
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-app.html">app</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li></ul><h3>Classes</h3><ul><li><a href="Account.html">Account</a></li><li><a href="account_.html">account</a></li><li><a href="Accounts.html">Accounts</a></li><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-account.logic_account.html">logic/account</a></li><li><a href="module-account.module_accounts.html">module/accounts</a></li><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 11 2017 11:07:37 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
