@@ -45,7 +45,48 @@
     <section>
         <article><p><img src="https://lisk.io/i/mediakit/logo_1.png" alt="Lisk Logo"></p>
 <h1>Lisk JSDoc Source code documentation</h1><p>This is an ongoing process</p>
-<h2>Syntax</h2><h3>General</h3><p><code>@description &lt;some description&gt;</code>:
+<h2>Best Practices</h2><ul>
+<li><p>To indicate the data type for a <code>@param</code> or <code>@return</code> tag, put the data type in <code>{}</code> brackets: <code>@param {TheType} paramName</code> or <code>@return {TheType}</code>. 
+For non-object data, use <code>number</code>, <code>string</code>, <code>bool</code>, <code>null</code>, <code>undefined</code>, <code>object</code>, <code>function</code>, <code>Array</code>. 
+For particular objects, use the constructor name; this could be a built-in JavaScript class (<code>Date</code>, <code>RegExp</code>) or custom classes.</p>
+</li>
+<li><p>when documenting an object that is not being used as a <code>namespace</code> or <code>class</code>, use <code>@prop {type} name</code> tags to document its properties (these work like <code>@param</code> for function parameters).</p>
+</li>
+<li><p>Use <code>@name</code> to tell JSDoc the name of what is being documented, if it is not the same as the name in the code.</p>
+</li>
+<li><p>No need to use <code>@function</code> in most cases - JSDoc will assume anything declared as a function is a regular function or method.</p>
+</li>
+</ul>
+<h4>Tag order</h4><p>Tags available should be declared in the following order:</p>
+<pre class="prettyprint source lang-js"><code>@global
+
+@typedef
+@var
+@name
+@namespace
+@constructor
+@callback
+@event
+@function
+
+@augments
+@lends
+
+@type
+@prop
+
+@param
+@return
+
+@throws
+@fires
+@listens
+
+@ingroup
+@deprecated
+@see
+@todo
+@ignore</code></pre><h2>Syntax</h2><h3>General</h3><p><code>@description &lt;some description&gt;</code>:
 Can omit this tag if description is located at the beginning</p>
 <h3>Membership</h3><p><code>@namespace [[{&lt;type&gt;}] &lt;SomeName&gt;]</code>:
 an object creates a namespace for its members.</p>
@@ -106,6 +147,22 @@ hgm.cookie = {
 
     /** describe me */
     remove: function (name) {  }
+};</code></pre><h4>A namespace with defaults and nested default properties</h4><pre class="prettyprint source lang-js"><code>/**
+ * @namespace
+ * @property {object} defaults - The default values for parties.
+ * @property {number} defaults.players - The default number of players.
+ * @property {string} defaults.level - The default level for the party.
+ * @property {object} defaults.treasure - The default treasure.
+ * @property {number} defaults.treasure.gold - How much gold the party starts with.
+ */
+var config = {
+    defaults: {
+        players: 1,
+        level:   'beginner',
+        treasure: {
+            gold: 0
+        }
+    }
 };</code></pre><h4>Documenting large apps, group modules into categories</h4><blockquote>
 <p>This is to represent and explore functional behavior.</p>
 </blockquote>
@@ -142,13 +199,13 @@ hgm.cookie = {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-app.html">app</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li></ul><h3>Classes</h3><ul><li><a href="Account.html">Account</a></li><li><a href="account_.html">account</a></li><li><a href="Accounts.html">Accounts</a></li><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-account.logic_account.html">logic/account</a></li><li><a href="module-account.module_accounts.html">module/accounts</a></li><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Account.html">Account</a></li><li><a href="Accounts.html">Accounts</a></li><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.http_accounts.html">http/accounts</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 11 2017 11:07:37 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Apr 12 2017 00:39:48 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>
