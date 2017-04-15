@@ -629,6 +629,184 @@
 
     
 
+    <h4 class="name" id="openAccount"><span class="type-signature">(private) </span>openAccount<span class="signature">(secret, cb)</span><span class="type-signature"> &rarr; {<a href="global.html#setImmediateCallback">setImmediateCallback</a>}</span></h4>
+
+    
+
+
+
+<div class="description">
+    <p>Get Account from publicKey obtained from secret parameter.
+If not existes, generates new account data with public address
+obtained from secret parameter.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>secret</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>desc</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>cb</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Callback function</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="modules_accounts.js.html">modules/accounts.js</a>, <a href="modules_accounts.js.html#line42">line 42</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    <p>new|current account data object</p>
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="global.html#setImmediateCallback">setImmediateCallback</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+        
+            
+
+    
+
     <h4 class="name" id="version"><span class="type-signature"></span>version<span class="signature">(req, cb)</span><span class="type-signature"> &rarr; {function|Object|Object|String|String|String}</span></h4>
 
     
@@ -904,6 +1082,961 @@
     
 
     
+        <h3 class="subsection-title">Type Definitions</h3>
+
+        
+                
+
+    
+
+    <h4 class="name" id="nodeStyleCallback"><span class="type-signature"></span>nodeStyleCallback<span class="signature">(error<span class="signature-attributes">nullable</span>, data<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+    
+
+
+
+<div class="description">
+    <p>A node-style callback as used by logic and modules.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>error</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Error</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+                    &lt;nullable><br>
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Error, if any, otherwise <code>null</code></p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>data</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Data</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Data, if there hasn't been an error</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="app.js.html">app.js</a>, <a href="app.js.html#line2">line 2</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+    <dt class="tag-see">See:</dt>
+    <dd class="tag-see">
+        <ul>
+            <li><a href="https://nodejs.org/api/errors.html#errors_node_js_style_callbacks">https://nodejs.org/api/errors.html#errors_node_js_style_callbacks</a></li>
+        </ul>
+    </dd>
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+                
+<h4 class="name" id="scope">scope</h4>
+
+
+
+
+<div class="description">
+    <p>Handles app instance (acts as global variable, passed as parameter).</p>
+</div>
+
+
+
+    <h5>Type:</h5>
+    <ul>
+        <li>
+            
+<span class="param-type">Object</span>
+
+
+        </li>
+    </ul>
+
+
+
+
+
+    <h5 class="subsection-title">Properties:</h5>
+
+    
+
+<table class="props">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.api</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>undefined</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.balancesSequence</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">undefined</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Sequence function, sequence Array (TODO: new typedef?)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.build</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>empty</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.bus</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>message function, bus constructor</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.config</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>configuration</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.connect</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">undefined</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>undefined</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.db</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Database constructor, database functions</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.dbSequence</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">function</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Database function</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.ed</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>crypto functions from lisk node-sodium</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.genesisblock</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>block information</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.lastCommit</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>hash transaction</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.listen</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>block information</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.logger</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>log functions</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.logic</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>several functions and objects (TODO: new typedef?), 
+repeats: bus, ed, genesisblock, logger, schema</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.modules</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>several functions (TODO: new typedef?)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.network</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>several functions (TODO: new typedef?)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.nonce</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>??</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.public</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">string</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>path to lisk public folder</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.ready</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">undefined</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>??</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.schema</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>ZSchema with objects (TODO: new typedef?)</p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>scope.sequence</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Object</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last"><p>Sequence function, sequence Array (TODO: new typedef?)</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="app.js.html">app.js</a>, <a href="app.js.html#line578">line 578</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+            
+                
+
+    
+
+    <h4 class="name" id="setImmediateCallback"><span class="type-signature"></span>setImmediateCallback<span class="signature">(error<span class="signature-attributes">nullable</span>, data<span class="signature-attributes">opt</span>)</span><span class="type-signature"></span></h4>
+
+    
+
+
+
+<div class="description">
+    <p>A triggered by setImmediate callback as used by logic, modules and helpers.</p>
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+        <th>Attributes</th>
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>error</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Error</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+
+                
+                    &lt;nullable><br>
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Error, if any, otherwise <code>null</code></p></td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>data</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Data</span>
+
+
+            
+            </td>
+
+            
+                <td class="attributes">
+                
+                    &lt;optional><br>
+                
+
+                
+
+                
+                </td>
+            
+
+            
+
+            <td class="description last"><p>Data, if there hasn't been an error</p></td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="app.js.html">app.js</a>, <a href="app.js.html#line9">line 9</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+    <dt class="tag-see">See:</dt>
+    <dd class="tag-see">
+        <ul>
+            <li><a href="https://nodejs.org/api/timers.html#timers_setimmediate_callback_args">https://nodejs.org/api/timers.html#timers_setimmediate_callback_args</a></li>
+        </ul>
+    </dd>
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            
+    
 
     
 </article>
@@ -916,13 +2049,13 @@
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Account.html">Account</a></li><li><a href="Accounts.html">Accounts</a></li><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.http_accounts.html">http/accounts</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#openAccount">openAccount</a></li><li><a href="global.html#version">version</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Apr 12 2017 00:39:48 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Fri Apr 14 2017 21:10:54 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>

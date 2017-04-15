@@ -28,13 +28,6 @@
         <article>
             <pre class="prettyprint source linenums"><code>'use strict';
 
-/**
- * Main account logic
- * @memberof module:accounts
- * @module logic/accounts
- * @class Account
- */
-
 var async = require('async');
 var pgp = require('pg-promise');
 var path = require('path');
@@ -43,13 +36,18 @@ jsonSql.setDialect('postgresql');
 var constants = require('../helpers/constants.js');
 var slots = require('../helpers/slots.js');
 
-/**
- * @private 
- */
+// Private fields
 var self, db, library, __private = {}, genesisBlock = null;
 
-/** 
- * @constructor 
+/**
+ * Main account logic
+ * @memberof module:accounts
+ * @class Account
+ * @classdesc Main account logic
+ * @constructor
+ * @param {scope} scope - app instance
+ * @param {function} cb Callback function
+ * @return {setImmediateCallback} with `this` as data
  */
 function Account (scope, cb) {
 	this.scope = scope;
@@ -350,7 +348,8 @@ function Account (scope, cb) {
 			immutable: true
 		}
 	];
-
+	
+	// Obtains fields from model
 	this.fields = this.model.map(function (field) {
 		var _tmp = {};
 
@@ -368,24 +367,28 @@ function Account (scope, cb) {
 
 		return _tmp;
 	});
-
+	
+	// Obtains bynary fields from model
 	this.binary = [];
 	this.model.forEach(function (field) {
 		if (field.type === 'Binary') {
 			this.binary.push(field.name);
 		}
 	}.bind(this));
-
+	
+	// Obtains filters from model
 	this.filter = {};
 	this.model.forEach(function (field) {
 		this.filter[field.name] = field.filter;
 	}.bind(this));
 
+	// Obtains conv from model
 	this.conv = {};
 	this.model.forEach(function (field) {
 		this.conv[field.name] = field.conv;
 	}.bind(this));
 
+	// Obtains editable fields from model
 	this.editable = [];
 	this.model.forEach(function (field) {
 		if (!field.immutable) {
@@ -395,7 +398,11 @@ function Account (scope, cb) {
 
 	return setImmediate(cb, null, this);
 }
-
+/**
+ * Create sql tables
+ * @param {function} cb Callback function
+ * @returns {setImmediateCallback} cb|error
+ */
 Account.prototype.createTables = function (cb) {
 	var sql = new pgp.QueryFile(path.join(process.cwd(), 'sql', 'memoryTables.sql'), {minify: true});
 
@@ -478,7 +485,12 @@ Account.prototype.toDB = function (raw) {
 
 	return raw;
 };
-
+/**
+ * get account information
+ * @param {object} filter
+ * @param {object} fields
+ * @param {function} cb callback function
+ */
 Account.prototype.get = function (filter, fields, cb) {
 	if (typeof(fields) === 'function') {
 		cb = fields;
@@ -491,7 +503,13 @@ Account.prototype.get = function (filter, fields, cb) {
 		return setImmediate(cb, err, data &amp;&amp; data.length ? data[0] : null);
 	});
 };
-
+/**
+ * get information
+ * @param {object} filter
+ * @param {object} fields
+ * @param {function} cb callback function
+ * @returns {setImmediateCallback} with rows | 'Account#getAll error'
+ */
 Account.prototype.getAll = function (filter, fields, cb) {
 	if (typeof(fields) === 'function') {
 		cb = fields;
@@ -838,13 +856,13 @@ module.exports = Account;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Account.html">Account</a></li><li><a href="Accounts.html">Accounts</a></li><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.http_accounts.html">http/accounts</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#openAccount">openAccount</a></li><li><a href="global.html#version">version</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Wed Apr 12 2017 00:39:48 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Fri Apr 14 2017 21:10:54 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>
