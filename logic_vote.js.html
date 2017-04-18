@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: logic/vote.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: logic/vote.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var async = require('async');
+var constants = require('../helpers/constants.js');
+var exceptions = require('../helpers/exceptions.js');
+var Diff = require('../helpers/diff.js');
+
+// Private fields
+var modules, library, self;
+
+// Constructor
+/**
+ * @memberof module:accounts
+ * @class
+ * @classdesc Main vote logic
+ * Allows validate and undo transactions, verify votes.
+ * @requires module:helpers/constants
+ * @requires module:helpers/exceptions
+ * @requires module:helpers/diff
+ * @constructor
+ */
+function Vote () {
+	self = this;
+}
+
+// Public methods
+/**
+ * @param {scope} scope - app instance
+ */
+Vote.prototype.bind = function (scope) {
+	modules = scope.modules;
+	library = scope.library;
+};
+
+/**
+ * Creates a vote.
+ * @param {Object} data - Entry information.
+ * @param {Object} trs - Transaction to assign the vote.
+ * @returns {Object} trs with new data
+ */
+Vote.prototype.create = function (data, trs) {
+	trs.recipientId = data.sender.address;
+	trs.asset.votes = data.votes;
+
+	return trs;
+};
+
+/**
+ * Obtains constant fee vote.
+ * @see {@link module:helpers/constants}
+ * @returns {number} constants.fees.vote
+ * @todo delete unnecessary function parameters trs, sender.
+ */
+Vote.prototype.calculateFee = function (trs, sender) {
+	return constants.fees.vote;
+};
+
+/**
+ * Verifies transaction fields.
+ * @param {Object} trs
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback|function} returns error if invalid parameter | 
+ * calls checkConfirmedDelegates.
+ * @todo delete unnecessary function parameter `sender` | fix logic.
+ */
+Vote.prototype.verify = function (trs, sender, cb) {
+	if (trs.recipientId !== trs.senderId) {
+		return setImmediate(cb, 'Invalid recipient');
+	}
+
+	if (!trs.asset || !trs.asset.votes) {
+		return setImmediate(cb, 'Invalid transaction asset');
+	}
+
+	if (!Array.isArray(trs.asset.votes)) {
+		return setImmediate(cb, 'Invalid votes. Must be an array');
+	}
+
+	if (!trs.asset.votes.length) {
+		return setImmediate(cb, 'Invalid votes. Must not be empty');
+	}
+
+	if (trs.asset.votes &amp;&amp; trs.asset.votes.length > 33) {
+		return setImmediate(cb, 'Voting limit exceeded. Maximum is 33 votes per transaction');
+	}
+
+	async.eachSeries(trs.asset.votes, function (vote, eachSeriesCb) {
+		self.verifyVote(vote, function (err) {
+			if (err) {
+				return setImmediate(eachSeriesCb, ['Invalid vote at index', trs.asset.votes.indexOf(vote), '-', err].join(' '));
+			} else {
+				return setImmediate(eachSeriesCb);
+			}
+		});
+	}, function (err) {
+		if (err) {
+			return setImmediate(cb, err);
+		} else {
+			return self.checkConfirmedDelegates(trs, cb);
+		}
+	});
+};
+
+/**
+ * Checks type, format and lenght from vote.
+ * @param {Object} vote
+ * @param {function} cb - Callback function.
+ * @return {setImmediateCallback} If no error param cb, otherwise error message.
+ */
+Vote.prototype.verifyVote = function (vote, cb) {
+	if (typeof vote !== 'string') {
+		return setImmediate(cb, 'Invalid vote type');
+	}
+
+	if (!/[-+]{1}[0-9a-z]{64}/.test(vote)) {
+		return setImmediate(cb, 'Invalid vote format');
+	}
+
+	if (vote.length !== 65) {
+		return setImmediate(cb, 'Invalid vote length');
+	}
+
+	return setImmediate(cb);
+};
+
+/**
+ * Implements delegates.checkConfirmedDelegates() with sender public key and votes.
+ * @param {Object} trs - Contains sender pk and votes.
+ * @param {function} cb - Callback function.
+ * @return {setImmediateCallback} With cb and error.
+ */
+Vote.prototype.checkConfirmedDelegates = function (trs, cb) {
+	modules.delegates.checkConfirmedDelegates(trs.senderPublicKey, trs.asset.votes, function (err) {
+		if (err &amp;&amp; exceptions.votes.indexOf(trs.id) > -1) {
+			library.logger.debug(err);
+			library.logger.debug(JSON.stringify(trs));
+			err = null;
+		}
+
+		return setImmediate(cb, err);
+	});
+};
+
+/**
+ * Implements delegates.checkUnconfirmedDelegates() with sender public key and votes.
+ * @param {Object} trs - Contains sender pk and votes.
+ * @param {function} cb - Callback function.
+ * @return {setImmediateCallback} With cb and error.
+ */
+Vote.prototype.checkUnconfirmedDelegates = function (trs, cb) {
+	modules.delegates.checkUnconfirmedDelegates(trs.senderPublicKey, trs.asset.votes, function (err) {
+		if (err &amp;&amp; exceptions.votes.indexOf(trs.id) > -1) {
+			library.logger.debug(err);
+			library.logger.debug(JSON.stringify(trs));
+			err = null;
+		}
+
+		return setImmediate(cb, err);
+	});
+};
+
+Vote.prototype.process = function (trs, sender, cb) {
+	return setImmediate(cb, null, trs);
+};
+
+Vote.prototype.getBytes = function (trs) {
+	var buf;
+
+	try {
+		buf = trs.asset.votes ? new Buffer(trs.asset.votes.join(''), 'utf8') : null;
+	} catch (e) {
+		throw e;
+	}
+
+	return buf;
+};
+
+Vote.prototype.apply = function (trs, block, sender, cb) {
+	var parent = this;
+
+	async.series([
+		function (seriesCb) {
+			self.checkConfirmedDelegates(trs, seriesCb);
+		},
+		function (seriesCb) {
+			parent.scope.account.merge(sender.address, {
+				delegates: trs.asset.votes,
+				blockId: block.id,
+				round: modules.rounds.calc(block.height)
+			}, function (err) {
+				return setImmediate(cb, err);
+			});
+		}
+	], cb);
+};
+
+Vote.prototype.undo = function (trs, block, sender, cb) {
+	if (trs.asset.votes === null) { return setImmediate(cb); }
+
+	var votesInvert = Diff.reverse(trs.asset.votes);
+
+	this.scope.account.merge(sender.address, {
+		delegates: votesInvert,
+		blockId: block.id,
+		round: modules.rounds.calc(block.height)
+	}, function (err) {
+		return setImmediate(cb, err);
+	});
+};
+
+Vote.prototype.applyUnconfirmed = function (trs, sender, cb) {
+	var parent = this;
+
+	async.series([
+		function (seriesCb) {
+			self.checkUnconfirmedDelegates(trs, seriesCb);
+		},
+		function (seriesCb) {
+			parent.scope.account.merge(sender.address, {
+				u_delegates: trs.asset.votes
+			}, function (err) {
+				return setImmediate(seriesCb, err);
+			});
+		}
+	], cb);
+};
+
+Vote.prototype.undoUnconfirmed = function (trs, sender, cb) {
+	if (trs.asset.votes === null) { return setImmediate(cb); }
+
+	var votesInvert = Diff.reverse(trs.asset.votes);
+
+	this.scope.account.merge(sender.address, {u_delegates: votesInvert}, function (err) {
+		return setImmediate(cb, err);
+	});
+};
+
+Vote.prototype.schema = {
+	id: 'Vote',
+	type: 'object',
+	properties: {
+		votes: {
+			type: 'array',
+			minLength: 1,
+			maxLength: constants.activeDelegates,
+			uniqueItems: true
+		}
+	},
+	required: ['votes']
+};
+
+Vote.prototype.objectNormalize = function (trs) {
+	var report = library.schema.validate(trs.asset, Vote.prototype.schema);
+
+	if (!report) {
+		throw 'Failed to validate vote schema: ' + this.scope.schema.getLastErrors().map(function (err) {
+			return err.message;
+		}).join(', ');
+	}
+
+	return trs;
+};
+
+Vote.prototype.dbRead = function (raw) {
+	// console.log(raw.v_votes);
+
+	if (!raw.v_votes) {
+		return null;
+	} else {
+		var votes = raw.v_votes.split(',');
+
+		return {votes: votes};
+	}
+};
+
+Vote.prototype.dbTable = 'votes';
+
+Vote.prototype.dbFields = [
+	'votes',
+	'transactionId'
+];
+
+Vote.prototype.dbSave = function (trs) {
+	return {
+		table: this.dbTable,
+		fields: this.dbFields,
+		values: {
+			votes: Array.isArray(trs.asset.votes) ? trs.asset.votes.join(',') : null,
+			transactionId: trs.id
+		}
+	};
+};
+
+Vote.prototype.ready = function (trs, sender) {
+	if (Array.isArray(sender.multisignatures) &amp;&amp; sender.multisignatures.length) {
+		if (!Array.isArray(trs.signatures)) {
+			return false;
+		}
+		return trs.signatures.length >= sender.multimin;
+	} else {
+		return true;
+	}
+};
+
+// Export
+module.exports = Vote;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 18 2017 09:44:37 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

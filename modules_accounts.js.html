@@ -44,16 +44,16 @@ var modules, library, self, __private = {}, shared = {};
 __private.assetTypes = {};
 __private.blockReward = new BlockReward();
 
-// Constructor
 /**
  * Initializes library with scope content and generates a Vote instance.
+ * Calls logic.transaction.attachAssetType().
  * @memberof module:accounts
- * @class Accounts
- * @classdesc Main accounts methods
- * @constructor
- * @param {scope} scope - app instance
- * @param {function} cb Callback function
- * @return {setImmediateCallback} Callback function with `self` as data
+ * @class
+ * @classdesc Main accounts methods.
+ * @implements module:accounts.Account#Vote
+ * @param {scope} scope - App instance.
+ * @param {function} cb - Callback function.
+ * @return {setImmediateCallback} Callback function with `self` as data.
  */
 function Accounts (cb, scope) {
 	library = scope;
@@ -66,16 +66,14 @@ function Accounts (cb, scope) {
 	setImmediate(cb, null, self);
 }
 
-// Private methods
 /**
- * Get Account from publicKey obtained from secret parameter.
+ * Gets account from publicKey obtained from secret parameter.
  * If not existes, generates new account data with public address
  * obtained from secret parameter.
  * @private
- * @method openAccount
- * @param {function} secret desc
- * @param {function} cb Callback function
- * @returns {setImmediateCallback} new|current account data object
+ * @param {function} secret
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} As per logic new|current account data object.
  */
 __private.openAccount = function (secret, cb) {
 	var hash = crypto.createHash('sha256').update(secret, 'utf8').digest();
@@ -108,12 +106,11 @@ __private.openAccount = function (secret, cb) {
 	});
 };
 
-// Public methods
 /**
  * Generates address based on public key.
- * @param {string} publicKey publicKey
- * @returns {string} address generated
- * @throws {string} if address is invalid throws `Invalid public key`
+ * @param {string} publicKey - PublicKey.
+ * @returns {string} Address generated.
+ * @throws {string} If address is invalid throws `Invalid public key`.
  */
 Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 	var publicKeyHash = crypto.createHash('sha256').update(publicKey, 'hex').digest();
@@ -133,12 +130,11 @@ Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 };
 
 /**
- * get account information
+ * Gets account information, calls logic.account.get().
  * @implements module:account#Account~get
- * @param {Object} filter
- * @param {string} filter.publicKey
- * @param {Object} fields
- * @param {function} cb callback function
+ * @param {Object} filter - Containts publicKey.
+ * @param {function} fields - Fields to get.
+ * @param {function} cb - Callback function.
  */
 Accounts.prototype.getAccount = function (filter, fields, cb) {
 	if (filter.publicKey) {
@@ -149,10 +145,26 @@ Accounts.prototype.getAccount = function (filter, fields, cb) {
 	library.logic.account.get(filter, fields, cb);
 };
 
+/**
+ * Gets accounts information, calls logic.account.getAll().
+ * @implements module:account#Account~getAll
+ * @param {Object} filter
+ * @param {Object} fields
+ * @param {function} cb - Callback function.
+ */
 Accounts.prototype.getAccounts = function (filter, fields, cb) {
 	library.logic.account.getAll(filter, fields, cb);
 };
 
+/**
+ * Validates input address and calls logic.account.set() and logic.account.get().
+ * @implements module:account#Account~set
+ * @implements module:account#Account~get
+ * @param {Object} data - Contains address and public key.
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} Errors.
+ * @returns {function()} Call to logic.account.get().
+ */
 Accounts.prototype.setAccountAndGet = function (data, cb) {
 	var address = data.address || null;
 
@@ -176,6 +188,15 @@ Accounts.prototype.setAccountAndGet = function (data, cb) {
 	});
 };
 
+/**
+ * Validates input address and calls logic.account.merge().
+ * @implements module:account#Account~merge
+ * @param {Object} data - Contains address and public key.
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} for errors wit address and public key.
+ * @returns {function} calls to logic.account.merge().
+ * @todo improve publicKey validation try/catch
+ */
 Accounts.prototype.mergeAccountAndGet = function (data, cb) {
 	var address = data.address || null;
 
@@ -194,13 +215,23 @@ Accounts.prototype.mergeAccountAndGet = function (data, cb) {
 	return library.logic.account.merge(address, data, cb);
 };
 
+/**
+ * Calls helpers.sandbox.callMethod().
+ * @implements module:helpers#callMethod
+ * @param {function} call - Method to call.
+ * @param {} args - List of arguments.
+ * @param {function} cb - Callback function.
+ * @todo verified function and arguments.
+ */
 Accounts.prototype.sandboxApi = function (call, args, cb) {
 	sandboxHelper.callMethod(shared, call, args, cb);
 };
 
 // Events
 /**
- * @param {Object} scope loaded modules
+ * Calls Vote.bind() with scope.
+ * @implements module:account#Vote~bind
+ * @param {Object} scope - Loaded modules.
  */
 Accounts.prototype.onBind = function (scope) {
 	modules = scope;
@@ -209,12 +240,19 @@ Accounts.prototype.onBind = function (scope) {
 		modules: modules, library: library
 	});
 };
-
+/**
+ * Checks if modules are loaded.
+ * @return {boolean} true if modules are loaded
+ */
 Accounts.prototype.isLoaded = function () {
 	return !!modules;
 };
 
 // Shared API
+/**
+ * @todo implement API comments with apidoc.
+ * @see {@link http://apidocjs.com/}
+ */
 Accounts.prototype.shared = {
 	open: function (req, cb) {
 		library.schema.validate(req.body, schema.open, function (err) {
@@ -506,6 +544,10 @@ Accounts.prototype.shared = {
 };
 
 // Internal API
+/**
+ * @todo implement API comments with apidoc.
+ * @see {@link http://apidocjs.com/}
+ */
 Accounts.prototype.internal = {
 	count: function (req, cb) {
 		return setImmediate(cb, null, {success: true, count: Object.keys(__private.accounts).length});
@@ -552,13 +594,13 @@ module.exports = Accounts;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#openAccount">openAccount</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Fri Apr 14 2017 21:10:54 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 18 2017 09:44:37 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -30,8 +30,9 @@
 
 /**
  * Middleware functions to add cors, log errors and conections, send status
- * and setup router
- * @module helper/httpApi
+ * and setup router.
+ * @memberof module:helpers
+ * @module helpers/httpApi
  */
 
 var extend = require('extend');
@@ -42,7 +43,7 @@ var checkIpInList = require('./checkIpInList');
  */
 var middleware = {
 	/**
-	 * Add CORS header to all requests
+	 * Adds CORS header to all requests.
 	 * @param {Object} req
 	 * @param {Object} res
 	 * @param {Function} next
@@ -54,7 +55,7 @@ var middleware = {
 	},
 
 	/**
-	 * Log all api errors
+	 * Logs all api errors.
 	 * @param {Logger} logger
 	 * @param {Error} err
 	 * @param {Object} req
@@ -68,7 +69,7 @@ var middleware = {
 	},
 
 	/**
-	 * Log api client connections
+	 * Logs api client connections.
 	 * @param {Logger} logger
 	 * @param {Object} req
 	 * @param {Object} res
@@ -82,7 +83,7 @@ var middleware = {
 	},
 
 	/**
-	 * Resend error msg when blockchain is not loaded
+	 * Resends error msg when blockchain is not loaded.
 	 * @param {Function} isLoaded
 	 * @param {Object} req
 	 * @param {Object} res
@@ -94,7 +95,7 @@ var middleware = {
 	},
 
 	/**
-	 * Resend error if API endpoint doesn't exists
+	 * Resends error if API endpoint doesn't exists.
 	 * @param {Object} req
 	 * @param {Object} res
 	 * @param {Function} next
@@ -104,11 +105,11 @@ var middleware = {
 	},
 
 	/**
-	 * Use req.sanitize for particular endpoint
+	 * Uses req.sanitize for particular endpoint.
 	 * @param {String} property
 	 * @param {Object} schema
 	 * @param {Function} cb
-	 * @return {Function} sanitize middleware
+	 * @return {Function} Sanitize middleware.
 	 */
 	sanitize: function (property, schema, cb) {
 		return function (req, res, next) {
@@ -122,7 +123,7 @@ var middleware = {
 	},
 
 	/**
-	 * Attach header to response
+	 * Attachs header to response.
 	 * @param {string} headerKey
 	 * @param {string} headerValue
 	 * @param {Object} req
@@ -135,7 +136,7 @@ var middleware = {
 	},
 
 	/**
-	 * Apply rules of public / internal API described in config.json
+	 * Applies rules of public / internal API described in config.json.
 	 * @param {Object} config
 	 * @param {Object} req
 	 * @param {Object} res
@@ -156,7 +157,7 @@ var middleware = {
 	},
 
 	/**
-	 * Pass getter for headers and assign then to response
+	 * Passes getter for headers and assign then to response.
 	 * @param {Function} getHeaders
 	 * @param {Object} req
 	 * @param {Object} res
@@ -169,7 +170,7 @@ var middleware = {
 };
 
 /**
- * Add 'success' field to every response and attach error message if needed
+ * Adds 'success' field to every response and attach error message if needed.
  * @param {Object} res
  * @param {String} err
  * @param {Object} response
@@ -183,7 +184,7 @@ function respond (res, err, response) {
 }
 
 /**
- * Register router in express app using default middleware
+ * Register router in express app using default middleware.
  * @param {String} route
  * @param {Object} app
  * @param {Object} router
@@ -210,13 +211,13 @@ module.exports = {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helper_httpApi.html">helper/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="helper_router.html">helper/router</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helper_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#openAccount">openAccount</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Fri Apr 14 2017 21:10:54 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 18 2017 09:44:37 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>
