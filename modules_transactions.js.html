@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/transactions.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/transactions.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var _ = require('lodash');
+var async = require('async');
+var constants = require('../helpers/constants.js');
+var crypto = require('crypto');
+var extend = require('extend');
+var OrderBy = require('../helpers/orderBy.js');
+var sandboxHelper = require('../helpers/sandbox.js');
+var schema = require('../schema/transactions.js');
+var sql = require('../sql/transactions.js');
+var TransactionPool = require('../logic/transactionPool.js');
+var transactionTypes = require('../helpers/transactionTypes.js');
+var Transfer = require('../logic/transfer.js');
+
+// Private fields
+var __private = {};
+var shared = {};
+var genesisblock = null;
+var modules;
+var library;
+var self;
+
+__private.assetTypes = {};
+
+/**
+ * Initializes library with scope content and generates a Transfer instance
+ * and a TransactionPool instance.
+ * Calls logic.transaction.attachAssetType().
+ * @memberof module:transactions
+ * @class
+ * @classdesc Main transactions methods.
+ * @param {function} cb - Callback function.
+ * @param {scope} scope - App instance.
+ * @return {setImmediateCallback} Callback function with `self` as data.
+ */
+// Constructor
+function Transactions (cb, scope) {
+	library = scope;
+	genesisblock = library.genesisblock;
+	self = this;
+
+	__private.transactionPool = new TransactionPool(library);
+
+	__private.assetTypes[transactionTypes.SEND] = library.logic.transaction.attachAssetType(
+		transactionTypes.SEND, new Transfer()
+	);
+
+	setImmediate(cb, null, self);
+}
+
+// Private methods
+/**
+ * Counts totals and gets transaction list from `trs_list` view.
+ * @private
+ * @param {Object} filter
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} error | data: {transactions, count}
+ */
+__private.list = function (filter, cb) {
+	var params = {};
+	var where = [];
+	var allowedFieldsMap = {
+		blockId:             '"t_blockId" = ${blockId}',
+		senderPublicKey:     '"t_senderPublicKey" = DECODE (${senderPublicKey}, \'hex\')',
+		recipientPublicKey:  '"m_recipientPublicKey" = DECODE (${recipientPublicKey}, \'hex\')',
+		senderId:            '"t_senderId" = ${senderId}',
+		recipientId:         '"t_recipientId" = ${recipientId}',
+		fromHeight:          '"b_height" >= ${fromHeight}',
+		toHeight:            '"b_height" &lt;= ${toHeight}',
+		fromTimestamp:       '"t_timestamp" >= ${fromTimestamp}',
+		toTimestamp:         '"t_timestamp" &lt;= ${toTimestamp}',
+		senderIds:           '"t_senderId" IN (${senderIds:csv})',
+		recipientIds:        '"t_recipientId" IN (${recipientIds:csv})',
+		senderPublicKeys:    'ENCODE ("t_senderPublicKey", \'hex\') IN (${senderPublicKeys:csv})',
+		recipientPublicKeys: 'ENCODE ("m_recipientPublicKey", \'hex\') IN (${recipientPublicKeys:csv})',
+		minAmount:           '"t_amount" >= ${minAmount}',
+		maxAmount:           '"t_amount" &lt;= ${maxAmount}',
+		type:                '"t_type" = ${type}',
+		minConfirmations:    'confirmations >= ${minConfirmations}',
+		limit: null,
+		offset: null,
+		orderBy: null,
+		// FIXME: Backward compatibility, should be removed after transitional period
+		ownerAddress: null,
+		ownerPublicKey: null
+	};
+	var owner = '';
+	var isFirstWhere = true;
+
+	var processParams = function (value, key) {
+		var field = String(key).split(':');
+		if (field.length === 1) {
+			// Only field identifier, so using default 'OR' condition
+			field.unshift('OR');
+		} else if (field.length === 2) {
+			// Condition supplied, checking if correct one
+			if (_.includes(['or', 'and'], field[0].toLowerCase())) {
+				field[0] = field[0].toUpperCase();
+			} else {
+				throw new Error('Incorrect condition [' + field[0] + '] for field: ' + field[1]);
+			}
+		} else {
+			// Invalid parameter 'x:y:z'
+			throw new Error('Invalid parameter supplied: ' + key);
+		}
+
+		// Mutating parametres when unix timestamp is supplied
+		if (_.includes(['fromUnixTime', 'toUnixTime'], field[1])) {
+			// Lisk epoch is 1464109200 as unix timestamp
+			value = value - constants.epochTime.getTime() / 1000;
+			field[1] = field[1].replace('UnixTime', 'Timestamp');
+		}
+
+		if (!_.includes(_.keys(allowedFieldsMap), field[1])) {
+			throw new Error('Parameter is not supported: ' + field[1]);
+		}
+
+		// Checking for empty parameters, 0 is allowed for few
+		if (!value &amp;&amp; !(value === 0 &amp;&amp; _.includes(['fromTimestamp', 'minAmount', 'minConfirmations', 'type', 'offset'], field[1]))) {
+			throw new Error('Value for parameter [' + field[1] + '] cannot be empty');
+		}
+
+		if (allowedFieldsMap[field[1]]) {
+			where.push((!isFirstWhere ? (field[0] + ' ') : '') + allowedFieldsMap[field[1]]);
+			params[field[1]] = value;
+			isFirstWhere = false;
+		}
+	};
+
+	// Generate list of fields with conditions
+	try {
+		_.each(filter, processParams);
+	} catch (err) {
+		return setImmediate(cb, err.message);
+	}
+
+	// FIXME: Backward compatibility, should be removed after transitional period
+	if (filter.ownerAddress &amp;&amp; filter.ownerPublicKey) {
+		owner = '("t_senderPublicKey" = DECODE (${ownerPublicKey}, \'hex\') OR "t_recipientId" = ${ownerAddress})';
+		params.ownerPublicKey = filter.ownerPublicKey;
+		params.ownerAddress = filter.ownerAddress;
+	}
+
+	if (!filter.limit) {
+		params.limit = 100;
+	} else {
+		params.limit = Math.abs(filter.limit);
+	}
+
+	if (!filter.offset) {
+		params.offset = 0;
+	} else {
+		params.offset = Math.abs(filter.offset);
+	}
+
+	if (params.limit > 1000) {
+		return setImmediate(cb, 'Invalid limit, maximum is 1000');
+	}
+
+	var orderBy = OrderBy(
+		filter.orderBy, {
+			sortFields: sql.sortFields,
+			fieldPrefix: function (sortField) {
+				if (['height'].indexOf(sortField) > -1) {
+					return 'b_' + sortField;
+				} else if (['confirmations'].indexOf(sortField) > -1) {
+					return sortField;
+				} else {
+					return 't_' + sortField;
+				}
+			}
+		}
+	);
+
+	if (orderBy.error) {
+		return setImmediate(cb, orderBy.error);
+	}
+
+	library.db.query(sql.countList({
+		where: where,
+		owner: owner
+	}), params).then(function (rows) {
+		var count = rows.length ? rows[0].count : 0;
+
+		library.db.query(sql.list({
+			where: where,
+			owner: owner,
+			sortField: orderBy.sortField,
+			sortMethod: orderBy.sortMethod
+		}), params).then(function (rows) {
+			var transactions = [];
+
+			for (var i = 0; i &lt; rows.length; i++) {
+				transactions.push(library.logic.transaction.dbRead(rows[i]));
+			}
+
+			var data = {
+				transactions: transactions,
+				count: count
+			};
+
+			return setImmediate(cb, null, data);
+		}).catch(function (err) {
+			library.logger.error(err.stack);
+			return setImmediate(cb, 'Transactions#list error');
+		});
+	}).catch(function (err) {
+		library.logger.error(err.stack);
+		return setImmediate(cb, 'Transactions#list error');
+	});
+};
+
+/**
+ * Gets transaction by id from `trs_list` view.
+ * @private
+ * @param {string} id
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} error | data: {transaction}
+ */
+__private.getById = function (id, cb) {
+	library.db.query(sql.getById, {id: id}).then(function (rows) {
+		if (!rows.length) {
+			return setImmediate(cb, 'Transaction not found: ' + id);
+		}
+
+		var transacton = library.logic.transaction.dbRead(rows[0]);
+
+		return setImmediate(cb, null, transacton);
+	}).catch(function (err) {
+		library.logger.error(err.stack);
+		return setImmediate(cb, 'Transactions#getById error');
+	});
+};
+
+/**
+ * Gets votes by transaction id from `votes` table.
+ * @private
+ * @param {transaction} transaction
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} error | data: {added, deleted}
+ */
+__private.getVotesById = function (transaction, cb) {
+	library.db.query(sql.getVotesById, {id: transaction.id}).then(function (rows) {
+		if (!rows.length) {
+			return setImmediate(cb, 'Transaction not found: ' + transaction.id);
+		}
+
+		var votes = rows[0].votes.split(',');
+		var added = [];
+		var deleted = [];
+
+		for (var i = 0; i &lt; votes.length; i++) {
+			if (votes[i].substring(0, 1) === '+') {
+				added.push (votes[i].substring(1));
+			} else if (votes[i].substring(0, 1) === '-') {
+				deleted.push (votes[i].substring(1));
+			}
+		}
+
+		transaction.votes = {added: added, deleted: deleted};
+
+		return setImmediate(cb, null, transaction);
+	}).catch(function (err) {
+		library.logger.error(err.stack);
+		return setImmediate(cb, 'Transactions#getVotesById error');
+	});
+};
+
+/**
+ * Gets transaction by calling parameter method.
+ * @private
+ * @param {Object} method
+ * @param {Object} req
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} error | data: {transaction}
+ */
+__private.getPooledTransaction = function (method, req, cb) {
+	library.schema.validate(req.body, schema.getPooledTransaction, function (err) {
+		if (err) {
+			return setImmediate(cb, err[0].message);
+		}
+
+		var transaction = self[method](req.body.id);
+
+		if (!transaction) {
+			return setImmediate(cb, 'Transaction not found');
+		}
+
+		return setImmediate(cb, null, {transaction: transaction});
+	});
+};
+
+/**
+ * Gets transactions by calling parameter method.
+ * Filters by senderPublicKey or address if they are present.
+ * @private
+ * @param {Object} method
+ * @param {Object} req
+ * @param {function} cb - Callback function.
+ * @returns {setImmediateCallback} error | data: {transactions, count}
+ */
+__private.getPooledTransactions = function (method, req, cb) {
+	library.schema.validate(req.body, schema.getPooledTransactions, function (err) {
+		if (err) {
+			return setImmediate(cb, err[0].message);
+		}
+
+		var transactions = self[method](true);
+		var i, toSend = [];
+
+		if (req.body.senderPublicKey || req.body.address) {
+			for (i = 0; i &lt; transactions.length; i++) {
+				if (transactions[i].senderPublicKey === req.body.senderPublicKey || transactions[i].recipientId === req.body.address) {
+					toSend.push(transactions[i]);
+				}
+			}
+		} else {
+			for (i = 0; i &lt; transactions.length; i++) {
+				toSend.push(transactions[i]);
+			}
+		}
+
+		return setImmediate(cb, null, {transactions: toSend, count: transactions.length});
+	});
+};
+
+// Public methods
+/**
+ * Check if transaction is in pool
+ * @param {string} id
+ * @return {function} Calls transactionPool.transactionInPool
+ */
+Transactions.prototype.transactionInPool = function (id) {
+	return __private.transactionPool.transactionInPool(id);
+};
+
+/**
+ * @param {string} id
+ * @return {function} Calls transactionPool.getUnconfirmedTransaction
+ */
+Transactions.prototype.getUnconfirmedTransaction = function (id) {
+	return __private.transactionPool.getUnconfirmedTransaction(id);
+};
+
+/**
+ * @param {string} id
+ * @return {function} Calls transactionPool.getQueuedTransaction
+ */
+Transactions.prototype.getQueuedTransaction = function (id) {
+	return __private.transactionPool.getQueuedTransaction(id);
+};
+
+/**
+ * @param {string} id
+ * @return {function} Calls transactionPool.getMultisignatureTransaction
+ */
+Transactions.prototype.getMultisignatureTransaction = function (id) {
+	return __private.transactionPool.getMultisignatureTransaction(id);
+};
+
+/**
+ * Gets unconfirmed transactions based on limit and reverse option.
+ * @param {boolean} reverse
+ * @param {number} limit
+ * @return {function} Calls transactionPool.getUnconfirmedTransactionList
+ */
+Transactions.prototype.getUnconfirmedTransactionList = function (reverse, limit) {
+	return __private.transactionPool.getUnconfirmedTransactionList(reverse, limit);
+};
+
+/**
+ * Gets queued transactions based on limit and reverse option.
+ * @param {boolean} reverse
+ * @param {number} limit
+ * @return {function} Calls transactionPool.getQueuedTransactionList
+ */
+Transactions.prototype.getQueuedTransactionList = function (reverse, limit) {
+	return __private.transactionPool.getQueuedTransactionList(reverse, limit);
+};
+
+/**
+ * Gets multisignature transactions based on limit and reverse option.
+ * @param {boolean} reverse
+ * @param {number} limit
+ * @return {function} Calls transactionPool.getQueuedTransactionList
+ */
+Transactions.prototype.getMultisignatureTransactionList = function (reverse, limit) {
+	return __private.transactionPool.getMultisignatureTransactionList(reverse, limit);
+};
+
+/**
+ * Gets unconfirmed, multisignature and queued transactions based on limit and reverse option.
+ * @param {boolean} reverse
+ * @param {number} limit
+ * @return {function} Calls transactionPool.getMergedTransactionList
+ */
+Transactions.prototype.getMergedTransactionList = function (reverse, limit) {
+	return __private.transactionPool.getMergedTransactionList(reverse, limit);
+};
+
+/**
+ * Removes transaction from unconfirmed, queued and multisignature.
+ * @param {string} id
+ * @return {function} Calls transactionPool.removeUnconfirmedTransaction
+ */
+Transactions.prototype.removeUnconfirmedTransaction = function (id) {
+	return __private.transactionPool.removeUnconfirmedTransaction(id);
+};
+
+/**
+ * Checks kind of unconfirmed transaction and process it, resets queue
+ * if limit reached.
+ * @param {transaction} transaction
+ * @param {Object} broadcast
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.processUnconfirmedTransaction
+ */
+Transactions.prototype.processUnconfirmedTransaction = function (transaction, broadcast, cb) {
+	return __private.transactionPool.processUnconfirmedTransaction(transaction, broadcast, cb);
+};
+
+/**
+ * Gets unconfirmed transactions list and applies unconfirmed transactions.
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.applyUnconfirmedList
+ */
+Transactions.prototype.applyUnconfirmedList = function (cb) {
+	return __private.transactionPool.applyUnconfirmedList(cb);
+};
+
+/**
+ * Applies unconfirmed list to unconfirmed Ids.
+ * @param {string[]} ids
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.applyUnconfirmedIds
+ */
+Transactions.prototype.applyUnconfirmedIds = function (ids, cb) {
+	return __private.transactionPool.applyUnconfirmedIds(ids, cb);
+};
+
+/**
+ * Undoes unconfirmed list from queue.
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.undoUnconfirmedList
+ */
+Transactions.prototype.undoUnconfirmedList = function (cb) {
+	return __private.transactionPool.undoUnconfirmedList(cb);
+};
+
+/**
+ * Applies confirmed transaction.
+ * @implements {logic.transaction.apply}
+ * @param {transaction} transaction
+ * @param {block} block
+ * @param {account} sender
+ * @param {function} cb - Callback function
+ */
+Transactions.prototype.apply = function (transaction, block, sender, cb) {
+	library.logger.debug('Applying confirmed transaction', transaction.id);
+	library.logic.transaction.apply(transaction, block, sender, cb);
+};
+
+/**
+ * Undoes confirmed transaction.
+ * @implements {logic.transaction.undo}
+ * @param {transaction} transaction
+ * @param {block} block
+ * @param {account} sender
+ * @param {function} cb - Callback function
+ */
+Transactions.prototype.undo = function (transaction, block, sender, cb) {
+	library.logger.debug('Undoing confirmed transaction', transaction.id);
+	library.logic.transaction.undo(transaction, block, sender, cb);
+};
+
+/**
+ * Gets requester if requesterPublicKey and calls applyUnconfirmed.
+ * @implements {modules.accounts.getAccount}
+ * @implements {logic.transaction.applyUnconfirmed}
+ * @param {transaction} transaction
+ * @param {account} sender
+ * @param {function} cb - Callback function
+ * @return {setImmediateCallback} for errors
+ */
+Transactions.prototype.applyUnconfirmed = function (transaction, sender, cb) {
+	library.logger.debug('Applying unconfirmed transaction', transaction.id);
+
+	if (!sender &amp;&amp; transaction.blockId !== genesisblock.block.id) {
+		return setImmediate(cb, 'Invalid block id');
+	} else {
+		if (transaction.requesterPublicKey) {
+			modules.accounts.getAccount({publicKey: transaction.requesterPublicKey}, function (err, requester) {
+				if (err) {
+					return setImmediate(cb, err);
+				}
+
+				if (!requester) {
+					return setImmediate(cb, 'Requester not found');
+				}
+
+				library.logic.transaction.applyUnconfirmed(transaction, sender, requester, cb);
+			});
+		} else {
+			library.logic.transaction.applyUnconfirmed(transaction, sender, cb);
+		}
+	}
+};
+
+/**
+ * Validates account and Undoes unconfirmed transaction.
+ * @implements {modules.accounts.getAccount}
+ * @implements {logic.transaction.undoUnconfirmed}
+ * @param {transaction} transaction
+ * @param {function} cb
+ * @return {setImmediateCallback} For error
+ */
+Transactions.prototype.undoUnconfirmed = function (transaction, cb) {
+	library.logger.debug('Undoing unconfirmed transaction', transaction.id);
+
+	modules.accounts.getAccount({publicKey: transaction.senderPublicKey}, function (err, sender) {
+		if (err) {
+			return setImmediate(cb, err);
+		}
+		library.logic.transaction.undoUnconfirmed(transaction, sender, cb);
+	});
+};
+
+/**
+ * Receives transactions
+ * @param {transaction[]} transactions
+ * @param {Object} broadcast
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.receiveTransactions
+ */
+Transactions.prototype.receiveTransactions = function (transactions, broadcast, cb) {
+	return __private.transactionPool.receiveTransactions(transactions, broadcast, cb);
+};
+
+/**
+ * Fills pool.
+ * @param {function} cb - Callback function.
+ * @return {function} Calls transactionPool.fillPool
+ */
+Transactions.prototype.fillPool = function (cb) {
+	return __private.transactionPool.fillPool(cb);
+};
+
+/**
+ * Calls helpers.sandbox.callMethod().
+ * @implements module:helpers#callMethod
+ * @param {function} call - Method to call.
+ * @param {*} args - List of arguments.
+ * @param {function} cb - Callback function.
+ */
+Transactions.prototype.sandboxApi = function (call, args, cb) {
+	sandboxHelper.callMethod(shared, call, args, cb);
+};
+
+/**
+ * Checks if `modules` is loaded.
+ * @return {boolean} True if `modules` is loaded.
+ */
+Transactions.prototype.isLoaded = function () {
+	return !!modules;
+};
+
+// Events
+/**
+ * Bounds scope to private transactionPool and modules and library
+ * to private Transfer instance.
+ * @implements module:transactions#Transfer~bind
+ * @param {scope} scope - Loaded modules.
+ */
+Transactions.prototype.onBind = function (scope) {
+	modules = scope;
+
+	__private.transactionPool.bind(modules);
+	__private.assetTypes[transactionTypes.SEND].bind({
+		modules: modules, library: library
+	});
+};
+
+// Shared API
+/**
+ * @todo implement API comments with apidoc.
+ * @see {@link http://apidocjs.com/}
+ */
+Transactions.prototype.shared = {
+	getTransactions: function (req, cb) {
+		async.waterfall([
+			function (waterCb) {
+				var params = {};
+				var pattern = /(and|or){1}:/i;
+
+				// Filter out 'and:'/'or:' from params to perform schema validation
+				_.each(req.body, function (value, key) {
+					var param = String(key).replace(pattern, '');
+					// Dealing with array-like parameters (csv comma separated)
+					if (_.includes(['senderIds', 'recipientIds', 'senderPublicKeys', 'recipientPublicKeys'], param)) {
+						value = String(value).split(',');
+						req.body[key] = value;
+					}
+					params[param] = value;
+				});
+
+				library.schema.validate(params, schema.getTransactions, function (err) {
+					if (err) {
+						return setImmediate(waterCb, err[0].message);
+					} else {
+						return setImmediate(waterCb, null);
+					}
+				});
+			},
+			function (waterCb) {
+				__private.list(req.body, function (err, data) {
+					if (err) {
+						return setImmediate(waterCb, 'Failed to get transactions: ' + err);
+					} else {
+						return setImmediate(waterCb, null, {transactions: data.transactions, count: data.count});
+					}
+				});
+			}
+		], function (err, res) {
+			return setImmediate(cb, err, res);
+		});
+	},
+
+	getTransaction: function (req, cb) {
+		library.schema.validate(req.body, schema.getTransaction, function (err) {
+			if (err) {
+				return setImmediate(cb, err[0].message);
+			}
+
+			__private.getById(req.body.id, function (err, transaction) {
+				if (!transaction || err) {
+					return setImmediate(cb, 'Transaction not found');
+				}
+
+				if (transaction.type === 3) {
+					__private.getVotesById(transaction, function (err, transaction) {
+						return setImmediate(cb, null, {transaction: transaction});
+					});
+				} else {
+					return setImmediate(cb, null, {transaction: transaction});
+				}
+			});
+		});
+	},
+
+	getTransactionsCount: function (req, cb) {
+		library.db.query(sql.count).then(function (transactionsCount) {
+			return setImmediate(cb, null, {
+				confirmed: transactionsCount[0].count,
+				multisignature: __private.transactionPool.multisignature.transactions.length,
+				unconfirmed: __private.transactionPool.unconfirmed.transactions.length,
+				queued: __private.transactionPool.queued.transactions.length
+			});
+		}, function (err) {
+			return setImmediate(cb, 'Unable to count transactions');
+		});
+	},
+
+	getQueuedTransaction: function (req, cb) {
+		return __private.getPooledTransaction('getQueuedTransaction', req, cb);
+	},
+
+	getQueuedTransactions: function (req, cb) {
+		return __private.getPooledTransactions('getQueuedTransactionList', req, cb);
+	},
+
+	getMultisignatureTransaction: function (req, cb) {
+		return __private.getPooledTransaction('getMultisignatureTransaction', req, cb);
+	},
+
+	getMultisignatureTransactions: function (req, cb) {
+		return __private.getPooledTransactions('getMultisignatureTransactionList', req, cb);
+	},
+
+	getUnconfirmedTransaction: function (req, cb) {
+		return __private.getPooledTransaction('getUnconfirmedTransaction', req, cb);
+	},
+
+	getUnconfirmedTransactions: function (req, cb) {
+		return __private.getPooledTransactions('getUnconfirmedTransactionList', req, cb);
+	},
+
+	addTransactions: function (req, cb) {
+		library.schema.validate(req.body, schema.addTransactions, function (err) {
+			if (err) {
+				return setImmediate(cb, err[0].message);
+			}
+
+			var hash = crypto.createHash('sha256').update(req.body.secret, 'utf8').digest();
+			var keypair = library.ed.makeKeypair(hash);
+
+			if (req.body.publicKey) {
+				if (keypair.publicKey.toString('hex') !== req.body.publicKey) {
+					return setImmediate(cb, 'Invalid passphrase');
+				}
+			}
+
+			var query = {address: req.body.recipientId};
+
+			library.balancesSequence.add(function (cb) {
+				modules.accounts.getAccount(query, function (err, recipient) {
+					if (err) {
+						return setImmediate(cb, err);
+					}
+
+					var recipientId = recipient ? recipient.address : req.body.recipientId;
+
+					if (!recipientId) {
+						return setImmediate(cb, 'Invalid recipient');
+					}
+
+					if (req.body.multisigAccountPublicKey &amp;&amp; req.body.multisigAccountPublicKey !== keypair.publicKey.toString('hex')) {
+						modules.accounts.getAccount({publicKey: req.body.multisigAccountPublicKey}, function (err, account) {
+							if (err) {
+								return setImmediate(cb, err);
+							}
+
+							if (!account || !account.publicKey) {
+								return setImmediate(cb, 'Multisignature account not found');
+							}
+
+							if (!Array.isArray(account.multisignatures)) {
+								return setImmediate(cb, 'Account does not have multisignatures enabled');
+							}
+
+							if (account.multisignatures.indexOf(keypair.publicKey.toString('hex')) &lt; 0) {
+								return setImmediate(cb, 'Account does not belong to multisignature group');
+							}
+
+							modules.accounts.getAccount({publicKey: keypair.publicKey}, function (err, requester) {
+								if (err) {
+									return setImmediate(cb, err);
+								}
+
+								if (!requester || !requester.publicKey) {
+									return setImmediate(cb, 'Requester not found');
+								}
+
+								if (requester.secondSignature &amp;&amp; !req.body.secondSecret) {
+									return setImmediate(cb, 'Missing requester second passphrase');
+								}
+
+								if (requester.publicKey === account.publicKey) {
+									return setImmediate(cb, 'Invalid requester public key');
+								}
+
+								var secondKeypair = null;
+
+								if (requester.secondSignature) {
+									var secondHash = crypto.createHash('sha256').update(req.body.secondSecret, 'utf8').digest();
+									secondKeypair = library.ed.makeKeypair(secondHash);
+								}
+
+								var transaction;
+
+								try {
+									transaction = library.logic.transaction.create({
+										type: transactionTypes.SEND,
+										amount: req.body.amount,
+										sender: account,
+										recipientId: recipientId,
+										keypair: keypair,
+										requester: keypair,
+										secondKeypair: secondKeypair
+									});
+								} catch (e) {
+									return setImmediate(cb, e.toString());
+								}
+
+								modules.transactions.receiveTransactions([transaction], true, cb);
+							});
+						});
+					} else {
+						modules.accounts.setAccountAndGet({publicKey: keypair.publicKey.toString('hex')}, function (err, account) {
+							if (err) {
+								return setImmediate(cb, err);
+							}
+
+							if (!account || !account.publicKey) {
+								return setImmediate(cb, 'Account not found');
+							}
+
+							if (account.secondSignature &amp;&amp; !req.body.secondSecret) {
+								return setImmediate(cb, 'Missing second passphrase');
+							}
+
+							var secondKeypair = null;
+
+							if (account.secondSignature) {
+								var secondHash = crypto.createHash('sha256').update(req.body.secondSecret, 'utf8').digest();
+								secondKeypair = library.ed.makeKeypair(secondHash);
+							}
+
+							var transaction;
+
+							try {
+								transaction = library.logic.transaction.create({
+									type: transactionTypes.SEND,
+									amount: req.body.amount,
+									sender: account,
+									recipientId: recipientId,
+									keypair: keypair,
+									secondKeypair: secondKeypair
+								});
+							} catch (e) {
+								return setImmediate(cb, e.toString());
+							}
+
+							modules.transactions.receiveTransactions([transaction], true, cb);
+						});
+					}
+				});
+			}, function (err, transaction) {
+				if (err) {
+					return setImmediate(cb, err);
+				}
+
+				return setImmediate(cb, null, {transactionId: transaction[0].id});
+			});
+		});
+	}
+};
+
+// Export
+module.exports = Transactions;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="Migrator.html">Migrator</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li><li><a href="Vote.html">Vote</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="-__private.html">__private</a></li><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#afterSave">afterSave</a></li><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#applyBlock">applyBlock</a></li><li><a href="global.html#applyGenesisBlock">applyGenesisBlock</a></li><li><a href="global.html#applyLimits">applyLimits</a></li><li><a href="global.html#applyTransaction">applyTransaction</a></li><li><a href="global.html#checkTransaction">checkTransaction</a></li><li><a href="global.html#count">count</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteBlock">deleteBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getById">getById</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#getIdSequence">getIdSequence</a></li><li><a href="global.html#getLastBlock">getLastBlock</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#lastReceipt">lastReceipt</a></li><li><a href="global.html#list">list</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBind">onBind</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#popLastBlock">popLastBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#promiseTransactions">promiseTransactions</a></li><li><a href="global.html#readDbRows">readDbRows</a></li><li><a href="global.html#receiveBlock">receiveBlock</a></li><li><a href="global.html#recoverChain">recoverChain</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#saveBlock">saveBlock</a></li><li><a href="global.html#saveGenesisBlock">saveGenesisBlock</a></li><li><a href="global.html#shared">shared</a></li><li><a href="global.html#validateForce">validateForce</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 11 2017 11:47:30 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

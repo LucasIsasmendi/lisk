@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: logic/broadcaster.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: logic/broadcaster.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var async = require('async');
+var constants = require('../helpers/constants.js');
+var extend = require('extend');
+var _ = require('lodash');
+
+// Private fields
+var modules, library, self, __private = {};
+
+/**
+ * Main Broadcaster logic.
+ * @memberof module:transport
+ * @class
+ * @classdesc Initializes variables, sets Broadcast routes and timer based on
+ * broadcast interval from config file.
+ * @implements {__private.releaseQueue}
+ * @param {scope} scope - App instance.
+ */
+// Constructor
+function Broadcaster (scope) {
+	library = scope;
+	self = this;
+
+	self.queue = [];
+	self.config = library.config.broadcasts;
+	self.config.peerLimit = constants.maxPeers;
+
+	// Optionally ignore broadhash consensus
+	if (library.config.forging.force) {
+		self.consensus = undefined;
+	} else {
+		self.consensus = 100;
+	}
+
+	// Broadcast routes
+	self.routes = [{
+		path: '/transactions',
+		collection: 'transactions',
+		object: 'transaction',
+		method: 'POST'
+	}, {
+		path: '/signatures',
+		collection: 'signatures',
+		object: 'signature',
+		method: 'POST'
+	}];
+
+	// Broadcaster timer
+	setImmediate(function nextRelease () {
+		async.series([
+			__private.releaseQueue
+		], function (err) {
+			if (err) {
+				library.logger.log('Broadcaster timer', err);
+			}
+
+			return setTimeout(nextRelease, self.config.broadcastInterval);
+		});
+	});
+}
+
+// Public methods
+/**
+ * Binds scope to private variable modules.
+ * @param {scope} scope - App instance.
+ */
+Broadcaster.prototype.bind = function (scope) {
+	modules = scope;
+};
+
+/**
+ * Calls peers.list function to get peers.
+ * @implements {modules.peers.list}
+ * @param {Object} params
+ * @param {function} cb
+ * @return {setImmediateCallback} err | peers
+ */
+Broadcaster.prototype.getPeers = function (params, cb) {
+	params.limit = params.limit || self.config.peerLimit;
+	params.broadhash = params.broadhash || null;
+
+	var originalLimit = params.limit;
+
+	modules.peers.list(params, function (err, peers, consensus) {
+		if (err) {
+			return setImmediate(cb, err);
+		}
+
+		if (self.consensus !== undefined &amp;&amp; originalLimit === constants.maxPeers) {
+			library.logger.info(['Broadhash consensus now', consensus, '%'].join(' '));
+			self.consensus = consensus;
+		}
+
+		return setImmediate(cb, null, peers);
+	});
+};
+
+/**
+ * Adds new object {params, options} to queue array .
+ * @param {Object} params
+ * @param {Object} options
+ * @return {Object[]} queue private variable with new data
+ */
+Broadcaster.prototype.enqueue = function (params, options) {
+	options.immediate = false;
+	return self.queue.push({params: params, options: options});
+};
+
+/**
+ * Gets peers and for each peer create it and broadcast. 
+ * @implements {getPeers}
+ * @implements {library.logic.peers.create}
+ * @param {Object} params
+ * @param {Object} options
+ * @param {function} cb
+ * @return {setImmediateCallback} err | peers
+ */
+Broadcaster.prototype.broadcast = function (params, options, cb) {
+	params.limit = params.limit || self.config.peerLimit;
+	params.broadhash = params.broadhash || null;
+
+	async.waterfall([
+		function getPeers (waterCb) {
+			if (!params.peers) {
+				return self.getPeers(params, waterCb);
+			} else {
+				return setImmediate(waterCb, null, params.peers);
+			}
+		},
+		function getFromPeer (peers, waterCb) {
+			library.logger.debug('Begin broadcast', options);
+
+			if (params.limit === self.config.peerLimit) { peers.splice(0, self.config.broadcastLimit); }
+
+			async.eachLimit(peers, self.config.parallelLimit, function (peer, eachLimitCb) {
+				peer = library.logic.peers.create(peer);
+
+				modules.transport.getFromPeer(peer, options, function (err) {
+					if (err) {
+						library.logger.debug('Failed to broadcast to peer: ' + peer.string, err);
+					}
+					return setImmediate(eachLimitCb);
+				});
+			}, function (err) {
+				library.logger.debug('End broadcast');
+				return setImmediate(waterCb, err, peers);
+			});
+		}
+	], function (err, peers) {
+		if (cb) {
+			return setImmediate(cb, err, {body: null, peer: peers});
+		}
+	});
+};
+
+/**
+ * Counts relays and valids limit.
+ * @param {Object} object
+ * @return {boolean} True if Broadcast relays exhausted
+ */
+Broadcaster.prototype.maxRelays = function (object) {
+	if (!Number.isInteger(object.relays)) {
+		object.relays = 0; // First broadcast
+	}
+
+	if (Math.abs(object.relays) >= self.config.relayLimit) {
+		library.logger.debug('Broadcast relays exhausted', object);
+		return true;
+	} else {
+		object.relays++; // Next broadcast
+		return false;
+	}
+};
+
+// Private
+/**
+ * Filters private queue based on broadcasts.
+ * @private
+ * @implements {__private.filterTransaction}
+ * @param {function} cb
+ * @return {setImmediateCallback} cb
+ */
+__private.filterQueue = function (cb) {
+	library.logger.debug('Broadcasts before filtering: ' + self.queue.length);
+
+	async.filter(self.queue, function (broadcast, filterCb) {
+		if (broadcast.options.immediate) {
+			return setImmediate(filterCb, null, false);
+		} else if (broadcast.options.data) {
+			var transaction = (broadcast.options.data.transaction || broadcast.options.data.signature);
+			return __private.filterTransaction(transaction, filterCb);
+		} else {
+			return setImmediate(filterCb, null, true);
+		}
+	}, function (err, broadcasts) {
+		self.queue = broadcasts;
+
+		library.logger.debug('Broadcasts after filtering: ' + self.queue.length);
+		return setImmediate(cb);
+	});
+};
+
+/**
+ * Checks if transaction is in pool or confirm it.
+ * @private
+ * @implements {modules.transactions.transactionInPool}
+ * @implements {library.logic.transaction.checkConfirmed}
+ * @param {transaction} transaction
+ * @param {function} cb
+ * @return {setImmediateCallback} cb, null, boolean
+ */
+__private.filterTransaction = function (transaction, cb) {
+	if (transaction !== undefined) {
+		if (modules.transactions.transactionInPool(transaction.id)) {
+			return setImmediate(cb, null, true);
+		} else {
+			return library.logic.transaction.checkConfirmed(transaction, function (err) {
+				return setImmediate(cb, null, !err);
+			});
+		}
+	} else {
+		return setImmediate(cb, null, false);
+	}
+};
+
+/**
+ * Groups broadcasts by api.
+ * @private
+ * @param {Object} broadcasts
+ * @return {Object[]} squashed routes
+ */
+__private.squashQueue = function (broadcasts) {
+	var grouped = _.groupBy(broadcasts, function (broadcast) {
+		return broadcast.options.api;
+	});
+
+	var squashed = [];
+
+	self.routes.forEach(function (route) {
+		if (Array.isArray(grouped[route.path])) {
+			var data = {};
+
+			data[route.collection] = grouped[route.path].map(function (broadcast) {
+				return broadcast.options.data[route.object];
+			}).filter(Boolean);
+
+			squashed.push({
+				options: { api: route.path, data: data, method: route.method },
+				immediate: false
+			});
+		}
+	});
+
+	return squashed;
+};
+
+/**
+ * Releases enqueued broadcasts:
+ * - filterQueue
+ * - squashQueue
+ * - broadcast
+ * @private
+ * @implements {__private.filterQueue}
+ * @implements {__private.squashQueue}
+ * @implements {getPeers}
+ * @implements {broadcast}
+ * @param {function} cb
+ * @return {setImmediateCallback} cb
+ */
+__private.releaseQueue = function (cb) {
+	library.logger.debug('Releasing enqueued broadcasts');
+
+	if (!self.queue.length) {
+		library.logger.debug('Queue empty');
+		return setImmediate(cb);
+	}
+
+	async.waterfall([
+		function filterQueue (waterCb) {
+			return __private.filterQueue(waterCb);
+		},
+		function squashQueue (waterCb) {
+			var broadcasts = self.queue.splice(0, self.config.releaseLimit);
+			return setImmediate(waterCb, null, __private.squashQueue(broadcasts));
+		},
+		function getPeers (broadcasts, waterCb) {
+			self.getPeers({}, function (err, peers) {
+				return setImmediate(waterCb, err, broadcasts, peers);
+			});
+		},
+		function broadcast (broadcasts, peers, waterCb) {
+			async.eachSeries(broadcasts, function (broadcast, eachSeriesCb) {
+				self.broadcast(extend({peers: peers}, broadcast.params), broadcast.options, eachSeriesCb);
+			}, function (err) {
+				return setImmediate(waterCb, err, broadcasts);
+			});
+		}
+	], function (err, broadcasts) {
+		if (err) {
+			library.logger.debug('Failed to release broadcast queue', err);
+		} else {
+			library.logger.debug('Broadcasts released: ' + broadcasts.length);
+		}
+		return setImmediate(cb);
+	});
+};
+
+// Export
+module.exports = Broadcaster;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="Migrator.html">Migrator</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li><li><a href="Vote.html">Vote</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="-__private.html">__private</a></li><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#afterSave">afterSave</a></li><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#applyBlock">applyBlock</a></li><li><a href="global.html#applyGenesisBlock">applyGenesisBlock</a></li><li><a href="global.html#applyLimits">applyLimits</a></li><li><a href="global.html#applyTransaction">applyTransaction</a></li><li><a href="global.html#checkTransaction">checkTransaction</a></li><li><a href="global.html#count">count</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteBlock">deleteBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getById">getById</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#getIdSequence">getIdSequence</a></li><li><a href="global.html#getLastBlock">getLastBlock</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#lastReceipt">lastReceipt</a></li><li><a href="global.html#list">list</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBind">onBind</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#popLastBlock">popLastBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#promiseTransactions">promiseTransactions</a></li><li><a href="global.html#readDbRows">readDbRows</a></li><li><a href="global.html#receiveBlock">receiveBlock</a></li><li><a href="global.html#recoverChain">recoverChain</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#saveBlock">saveBlock</a></li><li><a href="global.html#saveGenesisBlock">saveGenesisBlock</a></li><li><a href="global.html#shared">shared</a></li><li><a href="global.html#validateForce">validateForce</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 11 2017 11:47:30 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

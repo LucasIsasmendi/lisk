@@ -108,13 +108,13 @@ __private.openAccount = function (secret, cb) {
 
 /**
  * Generates address based on public key.
- * @param {string} publicKey - PublicKey.
- * @returns {string} Address generated.
+ * @param {publicKey} publicKey - PublicKey.
+ * @returns {address} Address generated.
  * @throws {string} If address is invalid throws `Invalid public key`.
  */
 Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 	var publicKeyHash = crypto.createHash('sha256').update(publicKey, 'hex').digest();
-	var temp = new Buffer(8);
+	var temp = Buffer.alloc(8);
 
 	for (var i = 0; i &lt; 8; i++) {
 		temp[i] = publicKeyHash[7 - i];
@@ -131,7 +131,7 @@ Accounts.prototype.generateAddressByPublicKey = function (publicKey) {
 
 /**
  * Gets account information, calls logic.account.get().
- * @implements module:account#Account~get
+ * @implements module:accounts#Account~get
  * @param {Object} filter - Containts publicKey.
  * @param {function} fields - Fields to get.
  * @param {function} cb - Callback function.
@@ -147,7 +147,7 @@ Accounts.prototype.getAccount = function (filter, fields, cb) {
 
 /**
  * Gets accounts information, calls logic.account.getAll().
- * @implements module:account#Account~getAll
+ * @implements module:accounts#Account~getAll
  * @param {Object} filter
  * @param {Object} fields
  * @param {function} cb - Callback function.
@@ -158,26 +158,35 @@ Accounts.prototype.getAccounts = function (filter, fields, cb) {
 
 /**
  * Validates input address and calls logic.account.set() and logic.account.get().
- * @implements module:account#Account~set
- * @implements module:account#Account~get
- * @param {Object} data - Contains address and public key.
+ * @implements module:accounts#Account~set
+ * @implements module:accounts#Account~get
+ * @param {Object} data - Contains address or public key to generate address.
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} Errors.
  * @returns {function()} Call to logic.account.get().
  */
 Accounts.prototype.setAccountAndGet = function (data, cb) {
 	var address = data.address || null;
+	var err;
 
 	if (address === null) {
 		if (data.publicKey) {
 			address = self.generateAddressByPublicKey(data.publicKey);
 		} else {
-			return setImmediate(cb, 'Missing address or public key');
+			err = 'Missing address or public key';
 		}
 	}
 
 	if (!address) {
-		return setImmediate(cb, 'Invalid public key');
+		err = 'Invalid public key';
+	}
+
+	if (err) {
+		if (typeof cb === 'function') {
+			return setImmediate(cb, err);
+		} else {
+			throw err;
+		}
 	}
 
 	library.logic.account.set(address, data, function (err) {
@@ -190,7 +199,7 @@ Accounts.prototype.setAccountAndGet = function (data, cb) {
 
 /**
  * Validates input address and calls logic.account.merge().
- * @implements module:account#Account~merge
+ * @implements module:accounts#Account~merge
  * @param {Object} data - Contains address and public key.
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} for errors wit address and public key.
@@ -199,17 +208,26 @@ Accounts.prototype.setAccountAndGet = function (data, cb) {
  */
 Accounts.prototype.mergeAccountAndGet = function (data, cb) {
 	var address = data.address || null;
+	var err;
 
 	if (address === null) {
 		if (data.publicKey) {
 			address = self.generateAddressByPublicKey(data.publicKey);
 		} else {
-			return setImmediate(cb, 'Missing address or public key');
+			err = 'Missing address or public key';
 		}
 	}
 
 	if (!address) {
-		return setImmediate(cb, 'Invalid public key');
+		err = 'Invalid public key';
+	}
+
+	if (err) {
+		if (typeof cb === 'function') {
+			return setImmediate(cb, err);
+		} else {
+			throw err;
+		}
 	}
 
 	return library.logic.account.merge(address, data, cb);
@@ -230,8 +248,8 @@ Accounts.prototype.sandboxApi = function (call, args, cb) {
 // Events
 /**
  * Calls Vote.bind() with scope.
- * @implements module:account#Vote~bind
- * @param {Object} scope - Loaded modules.
+ * @implements module:accounts#Vote~bind
+ * @param {scope} scope - Loaded modules.
  */
 Accounts.prototype.onBind = function (scope) {
 	modules = scope;
@@ -241,8 +259,8 @@ Accounts.prototype.onBind = function (scope) {
 	});
 };
 /**
- * Checks if modules are loaded.
- * @return {boolean} true if modules are loaded
+ * Checks if modules is loaded.
+ * @return {boolean} true if modules is loaded
  */
 Accounts.prototype.isLoaded = function () {
 	return !!modules;
@@ -594,13 +612,13 @@ module.exports = Accounts;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="Migrator.html">Migrator</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li><li><a href="Vote.html">Vote</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="-__private.html">__private</a></li><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#afterSave">afterSave</a></li><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#applyBlock">applyBlock</a></li><li><a href="global.html#applyGenesisBlock">applyGenesisBlock</a></li><li><a href="global.html#applyLimits">applyLimits</a></li><li><a href="global.html#applyTransaction">applyTransaction</a></li><li><a href="global.html#checkTransaction">checkTransaction</a></li><li><a href="global.html#count">count</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteBlock">deleteBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getById">getById</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#getIdSequence">getIdSequence</a></li><li><a href="global.html#getLastBlock">getLastBlock</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#lastReceipt">lastReceipt</a></li><li><a href="global.html#list">list</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBind">onBind</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#popLastBlock">popLastBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#promiseTransactions">promiseTransactions</a></li><li><a href="global.html#readDbRows">readDbRows</a></li><li><a href="global.html#receiveBlock">receiveBlock</a></li><li><a href="global.html#recoverChain">recoverChain</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#saveBlock">saveBlock</a></li><li><a href="global.html#saveGenesisBlock">saveGenesisBlock</a></li><li><a href="global.html#shared">shared</a></li><li><a href="global.html#validateForce">validateForce</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 18 2017 09:44:37 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 11 2017 11:47:30 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>

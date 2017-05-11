@@ -57,7 +57,38 @@ function Account (scope, cb) {
 	genesisBlock = this.scope.genesisblock.block;
 
 	this.table = 'mem_accounts';
-
+	/**
+	 * @typedef {Object} account
+	 * @property {string} username - Lowercase, between 1 and 20 chars.
+	 * @property {boolean} isDelegate
+	 * @property {boolean} u_isDelegate
+	 * @property {boolean} secondSignature
+	 * @property {boolean} u_secondSignature
+	 * @property {string} u_username
+	 * @property {address} address - Uppercase, between 1 and 22 chars.
+	 * @property {publicKey} publicKey
+	 * @property {publicKey} secondPublicKey
+	 * @property {number} balance - Between 0 and totalAmount from constants.
+	 * @property {number} u_balance - Between 0 and totalAmount from constants.
+	 * @property {number} vote
+	 * @property {number} rate
+	 * @property {String[]} delegates - From mem_account2delegates table, filtered by address.
+	 * @property {String[]} u_delegates - From mem_account2u_delegates table, filtered by address.
+	 * @property {String[]} multisignatures - From mem_account2multisignatures table, filtered by address.
+	 * @property {String[]} u_multisignatures - From mem_account2u_multisignatures table, filtered by address.
+	 * @property {number} multimin - Between 0 and 17.
+	 * @property {number} u_multimin - Between 0 and 17.
+	 * @property {number} multilifetime - Between 1 and 72.
+	 * @property {number} u_multilifetime - Between 1 and 72.
+	 * @property {string} blockId
+	 * @property {boolean} nameexist
+	 * @property {boolean} u_nameexist
+	 * @property {number} producedblocks - Between -1 and 1.
+	 * @property {number} missedblocks - Between -1 and 1.
+	 * @property {number} fees
+	 * @property {number} rewards
+	 * @property {boolean} virgin
+	 */
 	this.model = [
 		{
 			name: 'username',
@@ -399,7 +430,13 @@ function Account (scope, cb) {
 }
 
 /**
- * Creates database tables.
+ * Creates memory tables related to accounts:
+ * - mem_accounts
+ * - mem_round
+ * - mem_accounts2delegates
+ * - mem_accounts2u_delegates
+ * - mem_accounts2multisignatures
+ * - mem_accounts2u_multisignatures
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} cb|error.
  */
@@ -415,7 +452,12 @@ Account.prototype.createTables = function (cb) {
 };
 
 /**
- * Removes mem_* tables from database.
+ * Deletes the contents of these tables:
+ * - mem_round
+ * - mem_accounts2delegates
+ * - mem_accounts2u_delegates
+ * - mem_accounts2multisignatures
+ * - mem_accounts2u_multisignatures
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} cb|error.
  */
@@ -445,7 +487,7 @@ Account.prototype.removeTables = function (cb) {
 
 /**
  * Validates account schema.
- * @param {Object} account - Desc.
+ * @param {account} account
  * @returns {err|account} Error message or input parameter account.
  * @throws {string} If schema.validate fails, throws 'Failed to validate account schema'.
  */
@@ -467,8 +509,8 @@ Account.prototype.objectNormalize = function (account) {
 
 /**
  * Checks type, lenght and format from publicKey.
- * @param {Object} publicKey public key address
- * @throws {string} throws one error for every check
+ * @param {publicKey} publicKey
+ * @throws {string} throws one error for every check.
  */
 Account.prototype.verifyPublicKey = function (publicKey) {
 	if (publicKey !== undefined) {
@@ -482,7 +524,7 @@ Account.prototype.verifyPublicKey = function (publicKey) {
 		}
 		// Check format
 		try {
-			new Buffer(publicKey, 'hex');
+			Buffer.from(publicKey, 'hex');
 		} catch (e) {
 			throw 'Invalid public key, must be a hex string';
 		}
@@ -490,14 +532,14 @@ Account.prototype.verifyPublicKey = function (publicKey) {
 };
 
 /**
- * Normalizes address.
+ * Normalizes address and creates binary buffers to insert.
  * @param {Object} raw - with address and public key.
  * @returns {Object} Normalized address.
  */
 Account.prototype.toDB = function (raw) {
 	this.binary.forEach(function (field) {
 		if (raw[field]) {
-			raw[field] = new Buffer(raw[field], 'hex');
+			raw[field] = Buffer.from(raw[field], 'hex');
 		}
 	});
 
@@ -508,8 +550,8 @@ Account.prototype.toDB = function (raw) {
 };
 
 /**
- * Gets account information.
- * @param {Object} filter - Address.
+ * Gets account information for specified fields and filter criteria.
+ * @param {Object} filter - Contains address.
  * @param {Object|function} fields - Table fields.
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} Returns null or Object with database data.
@@ -529,7 +571,7 @@ Account.prototype.get = function (filter, fields, cb) {
 
 /**
  * Gets accounts information from mem_accounts.
- * @param {Object} filter - Address.
+ * @param {Object} filter - Contains address.
  * @param {Object|function} fields - Table fields.
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} data with rows | 'Account#getAll error'.
@@ -597,7 +639,7 @@ Account.prototype.getAll = function (filter, fields, cb) {
 
 /**
  * Sets fields for specific address in mem_accounts table.
- * @param {string} address
+ * @param {address} address
  * @param {Object} fields
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} cb | 'Account#set error'.
@@ -627,9 +669,11 @@ Account.prototype.set = function (address, fields, cb) {
 };
 
 /**
- * Inserts into mem_round balance, blockId and round based on address.
- * @param {string} address - Address.
- * @param {Object} diff - Content: balance, blockId, round.
+ * Updates account from mem_account with diff data belonging to an editable field.
+ * Inserts into mem_round "address", "amount", "delegate", "blockId", "round"
+ * based on field balance or delegates.
+ * @param {address} address
+ * @param {Object} diff - Must contains only mem_account editable fields.
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback|cb|done} Multiple returns: done() or error.
  */
@@ -867,8 +911,8 @@ Account.prototype.merge = function (address, diff, cb) {
 };
 
 /**
- * Removes address from mem_account table.
- * @param {string} address
+ * Removes an account from mem_account table based on address.
+ * @param {address} address
  * @param {function} cb - Callback function.
  * @returns {setImmediateCallback} Data with address | Account#remove error.
  */
@@ -900,13 +944,13 @@ module.exports = Account;
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapss.html">dapss</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Field.html">Field</a></li><li><a href="git.js.html">js</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="Validator.html">Validator</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li></ul><h3>Global</h3><ul><li><a href="global.html#beginEpochTime">beginEpochTime</a></li><li><a href="global.html#CheckIpInList">CheckIpInList</a></li><li><a href="global.html#getLastCommit">getLastCommit</a></li><li><a href="global.html#version">version</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="Migrator.html">Migrator</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li><li><a href="Vote.html">Vote</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="-__private.html">__private</a></li><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#afterSave">afterSave</a></li><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#applyBlock">applyBlock</a></li><li><a href="global.html#applyGenesisBlock">applyGenesisBlock</a></li><li><a href="global.html#applyLimits">applyLimits</a></li><li><a href="global.html#applyTransaction">applyTransaction</a></li><li><a href="global.html#checkTransaction">checkTransaction</a></li><li><a href="global.html#count">count</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteBlock">deleteBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getById">getById</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#getIdSequence">getIdSequence</a></li><li><a href="global.html#getLastBlock">getLastBlock</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#lastReceipt">lastReceipt</a></li><li><a href="global.html#list">list</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBind">onBind</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#popLastBlock">popLastBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#promiseTransactions">promiseTransactions</a></li><li><a href="global.html#readDbRows">readDbRows</a></li><li><a href="global.html#receiveBlock">receiveBlock</a></li><li><a href="global.html#recoverChain">recoverChain</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#saveBlock">saveBlock</a></li><li><a href="global.html#saveGenesisBlock">saveGenesisBlock</a></li><li><a href="global.html#shared">shared</a></li><li><a href="global.html#validateForce">validateForce</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Tue Apr 18 2017 09:44:37 GMT-0300 (ART)
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 11 2017 11:47:30 GMT-0300 (ART)
 </footer>
 
 <script> prettyPrint(); </script>
