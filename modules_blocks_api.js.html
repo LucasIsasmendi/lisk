@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/blocks/api.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/blocks/api.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var _ = require('lodash');
+var BlockReward = require('../../logic/blockReward.js');
+var constants = require('../../helpers/constants.js');
+var OrderBy = require('../../helpers/orderBy.js');
+var schema = require('../../schema/blocks.js');
+var sql = require('../../sql/blocks.js');
+
+var modules, library, self, __private = {};
+
+__private.blockReward = new BlockReward();
+
+/**
+ * Initializes library.
+ * @memberof module:blocks
+ * @class
+ * @classdesc Main API logic.
+ * Allows get information.
+ * @param {Object} logger
+ * @param {Database} db
+ * @param {Block} block
+ * @param {ZSchema} schema
+ * @param {Sequence} dbSequence
+ */
+function API (logger, db, block, schema, dbSequence) {
+	library = {
+		logger,
+		db,
+		schema,
+		dbSequence,
+		logic: {
+			block,
+		},
+	};
+	self = this;
+
+	library.logger.trace('Blocks->API: Submodule initialized.');
+	return self;
+}
+
+/**
+ * Get block by ID
+ *
+ * @private
+ * @async
+ * @method getById
+ * @param  {string}   id Block ID
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error if occurred
+ * @return {Object}   cb.block Block object
+ */
+__private.getById = function (id, cb) {
+	library.db.query(sql.getById, {id: id}).then(function (rows) {
+		if (!rows.length) {
+			return setImmediate(cb, 'Block not found');
+		}
+
+		// Normalize block
+		var block = library.logic.block.dbRead(rows[0]);
+
+		return setImmediate(cb, null, block);
+	}).catch(function (err) {
+		library.logger.error(err.stack);
+		return setImmediate(cb, 'Blocks#getById error');
+	});
+};
+
+/**
+ * Get filtered list of blocks (without transactions)
+ *
+ * @private
+ * @async
+ * @method list
+ * @param  {Object}   filter Conditions to filter with
+ * @param  {string}   filter.generatorPublicKey Public key of delegate who generates the block
+ * @param  {number}   filter.numberOfTransactions Number of transactions
+ * @param  {string}   filter.previousBlock Previous block ID
+ * @param  {number}   filter.height Block height
+ * @param  {number}   filter.totalAmount Total amount of block's transactions
+ * @param  {number}   filter.totalFee Block total fees
+ * @param  {number}   filter.reward Block reward
+ * @param  {number}   filter.limit Limit of blocks to retrieve, default: 100, max: 100
+ * @param  {number}   filter.offset Offset from where to start
+ * @param  {string}   filter.orderBy Sort order, default: height:desc
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error if occurred
+ * @return {Object}   cb.data List of normalized blocks
+ */
+__private.list = function (filter, cb) {
+	var params = {}, where = [];
+
+	if (filter.generatorPublicKey) {
+		where.push('"b_generatorPublicKey"::bytea = ${generatorPublicKey}');
+		params.generatorPublicKey = filter.generatorPublicKey;
+	}
+
+	// FIXME: Useless condition
+	if (filter.numberOfTransactions) {
+		where.push('"b_numberOfTransactions" = ${numberOfTransactions}');
+		params.numberOfTransactions = filter.numberOfTransactions;
+	}
+
+	if (filter.previousBlock) {
+		where.push('"b_previousBlock" = ${previousBlock}');
+		params.previousBlock = filter.previousBlock;
+	}
+
+	if (filter.height === 0 || filter.height > 0) {
+		where.push('"b_height" = ${height}');
+		params.height = filter.height;
+	}
+
+	// FIXME: Useless condition
+	if (filter.totalAmount >= 0) {
+		where.push('"b_totalAmount" = ${totalAmount}');
+		params.totalAmount = filter.totalAmount;
+	}
+
+	// FIXME: Useless condition
+	if (filter.totalFee >= 0) {
+		where.push('"b_totalFee" = ${totalFee}');
+		params.totalFee = filter.totalFee;
+	}
+
+	// FIXME: Useless condition
+	if (filter.reward >= 0) {
+		where.push('"b_reward" = ${reward}');
+		params.reward = filter.reward;
+	}
+
+	if (!filter.limit) {
+		params.limit = 100;
+	} else {
+		params.limit = Math.abs(filter.limit);
+	}
+
+	if (!filter.offset) {
+		params.offset = 0;
+	} else {
+		params.offset = Math.abs(filter.offset);
+	}
+
+	if (params.limit > 100) {
+		return setImmediate(cb, 'Invalid limit. Maximum is 100');
+	}
+
+	var orderBy = OrderBy(
+		(filter.orderBy || 'height:desc'), {
+			sortFields: sql.sortFields,
+			fieldPrefix: 'b_'
+		}
+	);
+
+	if (orderBy.error) {
+		return setImmediate(cb, orderBy.error);
+	}
+
+	library.db.query(sql.countList({
+		where: where
+	}), params).then(function (rows) {
+		var count = rows[0].count;
+
+		library.db.query(sql.list({
+			where: where,
+			sortField: orderBy.sortField,
+			sortMethod: orderBy.sortMethod
+		}), params).then(function (rows) {
+			var blocks = [];
+
+			// Normalize blocks
+			for (var i = 0; i &lt; rows.length; i++) {
+				// FIXME: Can have poor performance because it performs SHA256 hash calculation for each block
+				blocks.push(library.logic.block.dbRead(rows[i]));
+			}
+
+			var data = {
+				blocks: blocks,
+				count: count
+			};
+
+			return setImmediate(cb, null, data);
+		}).catch(function (err) {
+			library.logger.error(err.stack);
+			return setImmediate(cb, 'Blocks#list error');
+		});
+	}).catch(function (err) {
+		library.logger.error(err.stack);
+		return setImmediate(cb, 'Blocks#list error');
+	});
+};
+
+
+API.prototype.getBlock = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	library.schema.validate(req.body, schema.getBlock, function (err) {
+		if (err) {
+			return setImmediate(cb, err[0].message);
+		}
+
+		library.dbSequence.add(function (cb) {
+			__private.getById(req.body.id, function (err, block) {
+				if (!block || err) {
+					return setImmediate(cb, 'Block not found');
+				}
+				return setImmediate(cb, null, {block: block});
+			});
+		}, cb);
+	});
+};
+
+API.prototype.getBlocks = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	library.schema.validate(req.body, schema.getBlocks, function (err) {
+		if (err) {
+			return setImmediate(cb, err[0].message);
+		}
+
+		library.dbSequence.add(function (cb) {
+			__private.list(req.body, function (err, data) {
+				if (err) {
+					return setImmediate(cb, err);
+				}
+				return setImmediate(cb, null, {blocks: data.blocks, count: data.count});
+			});
+		}, cb);
+	});
+};
+
+API.prototype.getBroadhash = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {broadhash: modules.system.getBroadhash()});
+};
+
+API.prototype.getEpoch = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {epoch: constants.epochTime});
+};
+
+API.prototype.getHeight = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {height: modules.blocks.lastBlock.get().height});
+};
+
+API.prototype.getFee = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {fee: library.logic.block.calculateFee()});
+};
+
+API.prototype.getFees = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {fees: constants.fees});
+};
+
+API.prototype.getNethash = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {nethash: modules.system.getNethash()});
+};
+
+API.prototype.getMilestone = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {milestone: __private.blockReward.calcMilestone(modules.blocks.lastBlock.get().height)});
+};
+
+API.prototype.getReward = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {reward: __private.blockReward.calcReward(modules.blocks.lastBlock.get().height)});
+};
+
+API.prototype.getSupply = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	return setImmediate(cb, null, {supply: __private.blockReward.calcSupply(modules.blocks.lastBlock.get().height)});
+};
+
+API.prototype.getStatus = function (req, cb) {
+	if (!__private.loaded) {
+		return setImmediate(cb, 'Blockchain is loading');
+	}
+
+	var lastBlock = modules.blocks.lastBlock.get();
+
+	return setImmediate(cb, null, {
+		broadhash: modules.system.getBroadhash(),
+		epoch: constants.epochTime,
+		height: lastBlock.height,
+		fee: library.logic.block.calculateFee(),
+		milestone: __private.blockReward.calcMilestone(lastBlock.height),
+		nethash: modules.system.getNethash(),
+		reward: __private.blockReward.calcReward(lastBlock.height),
+		supply: __private.blockReward.calcSupply(lastBlock.height)
+	});
+};
+
+/**
+ * Handle modules initialization:
+ * - blocks
+ * - system
+ * @param {modules} scope Exposed modules
+ */
+API.prototype.onBind = function (scope) {
+	library.logger.trace('Blocks->API: Shared modules bind.');
+	modules = {
+		blocks: scope.blocks,
+		system: scope.system,
+	};
+
+	// Set module as loaded
+	__private.loaded = true;
+};
+
+module.exports = API;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="module-blocks.API.html">API</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-blocks.Chain.html">Chain</a></li><li><a href="module-blocks.Process.html">Process</a></li><li><a href="module-blocks.Utils.html">Utils</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#cleanup">cleanup</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#isFresh">isFresh</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBlockchainReady">onBlockchainReady</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 18 2017 16:12:57 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

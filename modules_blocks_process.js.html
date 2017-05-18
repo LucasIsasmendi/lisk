@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/blocks/process.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/blocks/process.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>'use strict';
+
+var async = require('async');
+var constants = require('../../helpers/constants.js');
+var schema = require('../../schema/blocks.js');
+var slots = require('../../helpers/slots.js');
+var sql = require('../../sql/blocks.js');
+
+var modules, library, self, __private = {};
+
+/**
+ * Initializes library.
+ * @memberof module:blocks
+ * @class
+ * @classdesc Main Process logic.
+ * Allows process blocks.
+ * @param {Object} logger
+ * @param {Block} block
+ * @param {Peers} peers
+ * @param {Transaction} transaction
+ * @param {ZSchema} schema
+ * @param {Database} db
+ * @param {Sequence} dbSequence
+ * @param {Sequence} sequence
+ * @param {Object} genesisblock
+ */
+function Process (logger, block, peers, transaction, schema, db, dbSequence, sequence, genesisblock) {
+	library = {
+		logger,
+		schema,
+		db,
+		dbSequence,
+		sequence,
+		genesisblock,
+		logic: {
+			block,
+			peers,
+			transaction,
+		},
+	};
+	self = this;
+
+	library.logger.trace('Blocks->Process: Submodule initialized.');
+	return self;
+}
+
+/**
+ * Performs chain comparison with remote peer
+ * WARNING: Can trigger chain recovery
+ *
+ * @async
+ * @public
+ * @method getCommonBlock
+ * @param  {Peer}     peer Peer to perform chain comparison with
+ * @param  {number}   height Block height
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error if occurred
+ * @return {Object}   cb.res Result object
+ */
+Process.prototype.getCommonBlock = function (peer, height, cb) {
+	var comparisionFailed = false;
+
+	async.waterfall([
+		function (waterCb) {
+			// Get IDs sequence (comma separated list)
+			modules.blocks.utils.getIdSequence(height, function (err, res) {
+				return setImmediate(waterCb, err, res);
+			});
+		},
+		function (res, waterCb) {
+			var ids = res.ids;
+
+			// Perform request to supplied remote peer
+			modules.transport.getFromPeer(peer, {
+				api: '/blocks/common?ids=' + ids,
+				method: 'GET'
+			}, function (err, res) {
+				if (err || res.body.error) {
+					return setImmediate(waterCb, err || res.body.error.toString());
+				} else if (!res.body.common) {
+					// FIXME: Need better checking here, is base on 'common' property enough?
+					comparisionFailed = true;
+					return setImmediate(waterCb, ['Chain comparison failed with peer:', peer.string, 'using ids:', ids].join(' '));
+				} else {
+					return setImmediate(waterCb, null, res);
+				}
+			});
+		},
+		function (res, waterCb) {
+			// Validate remote peer response via schema
+			library.schema.validate(res.body.common, schema.getCommonBlock, function (err) {
+				if (err) {
+					return setImmediate(waterCb, err[0].message);
+				} else {
+					return setImmediate(waterCb, null, res);
+				}
+			});
+		},
+		function (res, waterCb) {
+			// Check that block with ID, previousBlock and height exists in database
+			library.db.query(sql.getCommonBlock(res.body.common.previousBlock), {
+				id: res.body.common.id,
+				previousBlock: res.body.common.previousBlock,
+				height: res.body.common.height
+			}).then(function (rows) {
+				if (!rows.length || !rows[0].count) {
+					// Block doesn't exists - comparison failed
+					comparisionFailed = true;
+					return setImmediate(waterCb, ['Chain comparison failed with peer:', peer.string, 'using block:', JSON.stringify(res.body.common)].join(' '));
+				} else {
+					// Block exists - it's common between our node and remote peer
+					return setImmediate(waterCb, null, res.body.common);
+				}
+			}).catch(function (err) {
+				// SQL error occurred
+				library.logger.error(err.stack);
+				return setImmediate(waterCb, 'Blocks#getCommonBlock error');
+			});
+		}
+	], function (err, res) {
+		// If comparison failed and current consensus is low - perform chain recovery
+		if (comparisionFailed &amp;&amp; modules.transport.poorConsensus()) {
+			return modules.blocks.chain.recoverChain(cb);
+		} else {
+			return setImmediate(cb, err, res);
+		}
+	});
+};
+
+
+/**
+ * Loads full blocks from database, used when rebuilding blockchain, snapshotting
+ * see: loader.loadBlockChain (private)
+ * 
+ * @async
+ * @public
+ * @method loadBlocksOffset
+ * @param  {number}   limit Limit amount of blocks
+ * @param  {number}   offset Offset to start at
+ * @param  {boolean}  verify Indicator that block needs to be verified
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error if occurred
+ * @return {Object}   cb.lastBlock Current last block
+ */
+Process.prototype.loadBlocksOffset = function (limit, offset, verify, cb) {
+	// Calculate limit if offset is supplied
+	var newLimit = limit + (offset || 0);
+	var params = { limit: newLimit, offset: offset || 0 };
+
+	library.logger.debug('Loading blocks offset', {limit: limit, offset: offset, verify: verify});
+	// Execute in sequence via dbSequence
+	library.dbSequence.add(function (cb) {
+		// Loads full blocks from database
+		// FIXME: Weird logic in that SQL query, also ordering used can be performance bottleneck - to rewrite
+		library.db.query(sql.loadBlocksOffset, params).then(function (rows) {
+			// Normalize blocks
+			var blocks = modules.blocks.utils.readDbRows(rows);
+
+			async.eachSeries(blocks, function (block, cb) {
+				// Stop processing if node shutdown was requested
+				if (modules.blocks.isCleaning.get()) {
+					return setImmediate(cb);
+				}
+
+				library.logger.debug('Processing block', block.id);
+				if (verify &amp;&amp; block.id !== library.genesisblock.block.id) {
+					// Sanity check of the block, if values are coherent.
+					// No access to database.
+					var check = modules.blocks.verify.verifyBlock(block);
+
+					if (!check.verified) {
+						library.logger.error(['Block', block.id, 'verification failed'].join(' '), check.errors.join(', '));
+						// Return first error from checks
+						return setImmediate(cb, check.errors[0]);
+					}
+				}
+				if (block.id === library.genesisblock.block.id) {
+					modules.blocks.chain.applyGenesisBlock(block, cb);
+				} else {
+					// Apply block - broadcast: false, saveBlock: false
+					// FIXME: Looks like we are missing some validations here, because applyBlock is different than processBlock used elesewhere
+					// - that need to be checked and adjusted to be consistent
+					modules.blocks.chain.applyBlock(block, false, cb, false);
+				}
+				// Update last block
+				modules.blocks.lastBlock.set(block);
+			}, function (err) {
+				return setImmediate(cb, err, modules.blocks.lastBlock.get());
+			});
+		}).catch(function (err) {
+			library.logger.error(err.stack);
+			return setImmediate(cb, 'Blocks#loadBlocksOffset error');
+		});
+	}, cb);
+};
+
+/**
+ * Ask remote peer for blocks and process them
+ *
+ * @async
+ * @public
+ * @method loadBlocksFromPeer
+ * @param  {Peer}     peer Peer to perform chain comparison with
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error if occurred
+ * @return {Object}   cb.lastValidBlock Normalized new last block
+ */
+Process.prototype.loadBlocksFromPeer = function (peer, cb) {
+	// Set current last block as last valid block
+	var lastValidBlock = modules.blocks.lastBlock.get();
+
+	// Normalize peer
+	peer = library.logic.peers.create(peer);
+	library.logger.info('Loading blocks from: ' + peer.string);
+
+	function getFromPeer (seriesCb) {
+		// Ask remote peer for blocks
+		modules.transport.getFromPeer(peer, {
+			method: 'GET',
+			api: '/blocks?lastBlockId=' + lastValidBlock.id
+		}, function (err, res) {
+			err = err || res.body.error;
+			if (err) {
+				return setImmediate(seriesCb, err);
+			} else {
+				return setImmediate(seriesCb, null, res.body.blocks);
+			}
+		});
+	}
+
+	// Validate remote peer response via schema
+	function validateBlocks (blocks, seriesCb) {
+		var report = library.schema.validate(blocks, schema.loadBlocksFromPeer);
+
+		if (!report) {
+			return setImmediate(seriesCb, 'Received invalid blocks data');
+		} else {
+			return setImmediate(seriesCb, null, blocks);
+		}
+	}
+
+	// Process all received blocks
+	function processBlocks (blocks, seriesCb) {
+		// Skip if ther is no blocks
+		if (blocks.length === 0) {
+			return setImmediate(seriesCb);
+		}
+		// Iterate over received blocks, normalize block first...
+		async.eachSeries(modules.blocks.utils.readDbRows(blocks), function (block, eachSeriesCb) {
+			if (modules.blocks.isCleaning.get()) {
+				// Cancel processing if node shutdown was requested
+				return setImmediate(eachSeriesCb);
+			} else {
+				// ...then process block
+				return processBlock(block, eachSeriesCb);
+			}
+		}, function (err) {
+			return setImmediate(seriesCb, err);
+		});
+	}
+
+	// Process single block
+	function processBlock (block, seriesCb) {
+		// Start block processing - broadcast: false, saveBlock: true
+		modules.blocks.verify.processBlock(block, false, function (err) {
+			if (!err) {
+				// Update last valid block
+				lastValidBlock = block;
+				library.logger.info(['Block', block.id, 'loaded from:', peer.string].join(' '), 'height: ' + block.height);
+			} else {
+				var id = (block ? block.id : 'null');
+
+				library.logger.debug('Block processing failed', {id: id, err: err.toString(), module: 'blocks', block: block});
+			}
+			return seriesCb(err);
+		}, true);
+	}
+
+	async.waterfall([
+		getFromPeer,
+		validateBlocks,
+		processBlocks
+	], function (err) {
+		if (err) {
+			return setImmediate(cb, 'Error loading blocks: ' + (err.message || err), lastValidBlock);
+		} else {
+			return setImmediate(cb, null, lastValidBlock);
+		}
+	});
+};
+
+/**
+ * Generate new block
+ * see: loader.loadBlockChain (private)
+ * 
+ * @async
+ * @public
+ * @method generateBlock
+ * @param  {Object}   keypair Pair of private and public keys, see: helpers.ed.makeKeypair
+ * @param  {number}   timestamp Slot time, see: helpers.slots.getSlotTime
+ * @param  {Function} cb Callback function
+ * @return {Function} cb Callback function from params (through setImmediate)
+ * @return {Object}   cb.err Error message if error occurred
+ */
+Process.prototype.generateBlock = function (keypair, timestamp, cb) {
+	// Get transactions that will be included in block
+	var transactions = modules.transactions.getUnconfirmedTransactionList(false, constants.maxTxsPerBlock);
+	var ready = [];
+
+	async.eachSeries(transactions, function (transaction, cb) {
+		modules.accounts.getAccount({ publicKey: transaction.senderPublicKey }, function (err, sender) {
+			if (err || !sender) {
+				return setImmediate(cb, 'Sender not found');
+			}
+
+			// Check transaction depends on type
+			if (library.logic.transaction.ready(transaction, sender)) {
+				// Verify transaction
+				library.logic.transaction.verify(transaction, sender, function (err) {
+					ready.push(transaction);
+					return setImmediate(cb);
+				});
+			} else {
+				return setImmediate(cb);
+			}
+		});
+	}, function () {
+		var block;
+
+		try {
+			// Create a block
+			block = library.logic.block.create({
+				keypair: keypair,
+				timestamp: timestamp,
+				previousBlock: modules.blocks.lastBlock.get(),
+				transactions: ready
+			});
+		} catch (e) {
+			library.logger.error(e.stack);
+			return setImmediate(cb, e);
+		}
+
+		// Start block processing - broadcast: true, saveBlock: true
+		modules.blocks.verify.processBlock(block, true, cb, true);
+	});
+};
+
+/**
+ * EVENTS
+ */
+
+/**
+ * Handle newly received block
+ *
+ * @public
+ * @method  onReceiveBlock
+ * @listens module:transport~event:receiveBlock
+ * @param   {block}   block New block
+ */
+Process.prototype.onReceiveBlock = function (block) {
+	var lastBlock;
+
+	// Execute in sequence via sequence
+	library.sequence.add(function (cb) {
+		// When client is not loaded, is syncing or round is ticking
+		// Do not receive new blocks as client is not ready
+		if (!__private.loaded || modules.loader.syncing() || modules.rounds.ticking()) {
+			library.logger.debug('Client not ready to receive block', block.id);
+			return;
+		}
+
+		lastBlock = modules.blocks.lastBlock.get();
+
+		// Initial check if new block looks fine
+		if (block.previousBlock === lastBlock.id &amp;&amp; lastBlock.height + 1 === block.height) {
+			// Process received block
+			return __private.receiveBlock(block, cb);
+		} else if (block.previousBlock !== lastBlock.id &amp;&amp; lastBlock.height + 1 === block.height) {
+			// Fork: Consecutive height but different previous block id.
+			modules.delegates.fork(block, 1);
+
+			// We should keep the oldest one or if both have same age - keep one with lower id
+			if (block.timestamp > lastBlock.timestamp || (block.timestamp === lastBlock.timestamp &amp;&amp; block.id > lastBlock.id)) {
+				library.logger.info('Last block stands');
+				return setImmediate(cb);
+			} else {
+				// In other cases - we have wrong parent and should rewind.
+				library.logger.info('Last block and parent loses');
+				// Delete last 2 blocks
+				async.series([
+					modules.blocks.chain.deleteLastBlock,
+					modules.blocks.chain.deleteLastBlock
+				], cb);
+			}
+		} else if (block.previousBlock === lastBlock.previousBlock &amp;&amp; block.height === lastBlock.height &amp;&amp; block.id !== lastBlock.id) {
+			// Fork: Same height and previous block id, but different block id.
+			modules.delegates.fork(block, 5);
+
+			// Check if delegate forged on more than one node.
+			if (block.generatorPublicKey === lastBlock.generatorPublicKey) {
+				library.logger.warn('Delegate forging on multiple nodes', block.generatorPublicKey);
+			}
+
+			// Two competiting blocks on same height, we should keep the oldest one or if both have same age - keep one with lower id
+			if (block.timestamp > lastBlock.timestamp || (block.timestamp === lastBlock.timestamp &amp;&amp; block.id > lastBlock.id)) {
+				library.logger.info('Last block stands');
+				return setImmediate(cb);
+			} else {
+				library.logger.info('Last block loses');
+				async.series([
+					function (seriesCb) {
+						// Delete last block
+						modules.blocks.chain.deleteLastBlock(seriesCb);
+					},
+					function (seriesCb) {
+						// Process received block
+						return __private.receiveBlock(block, seriesCb);
+					}
+				], cb);
+			}
+		} else {
+			return setImmediate(cb);
+		}
+	});
+};
+
+/**
+ * Receive block - logs info about received block, updates last receipt, fires processing
+ *
+ * @private
+ * @async
+ * @method receiveBlock
+ * @param {Object}   block Full normalized block
+ * @param {Function} cb Callback function
+ */
+__private.receiveBlock = function (block, cb) {
+	library.logger.info([
+		'Received new block id:', block.id,
+		'height:', block.height,
+		'round:',  modules.rounds.calc(block.height),
+		'slot:', slots.getSlotNumber(block.timestamp),
+		'reward:', block.reward
+	].join(' '));
+
+	// Update last receipt
+	modules.blocks.lastReceipt.update();
+	// Start block processing - broadcast: true, saveBlock: true
+	modules.blocks.verify.processBlock(block, true, cb, true);
+};
+
+/**
+ * Handle modules initialization
+ * - accounts
+ * - blocks
+ * - delegates
+ * - loader
+ * - rounds
+ * - transactions
+ * - transport
+ * @param {modules} scope Exposed modules
+ */
+Process.prototype.onBind = function (scope) {
+	library.logger.trace('Blocks->Process: Shared modules bind.');
+	modules = {
+		accounts: scope.accounts,
+		blocks: scope.blocks,
+		delegates: scope.delegates,
+		loader: scope.loader,
+		rounds: scope.rounds,
+		transactions: scope.transactions,
+		transport: scope.transport,
+	};
+
+	// Set module as loaded
+	__private.loaded = true;
+};
+
+module.exports = Process;
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Modules</h3><ul><li><a href="module-accounts.html">accounts</a></li><li><a href="module-app.html">app</a></li><li><a href="module-blocks.html">blocks</a></li><li><a href="module-dapps.html">dapps</a></li><li><a href="module-delegates.html">delegates</a></li><li><a href="module-helpers.html">helpers</a></li><li><a href="module-helpers.module_helpers_diff.html">helpers/diff</a></li><li><a href="module-helpers.module_helpers_httpApi.html">helpers/httpApi</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li><li><a href="module-loader.html">loader</a></li><li><a href="module-multisignatures.html">multisignatures</a></li><li><a href="module-peers.html">peers</a></li><li><a href="module-rounds.html">rounds</a></li><li><a href="module-server.html">server</a></li><li><a href="module-signatures.html">signatures</a></li><li><a href="module-transactions.html">transactions</a></li><li><a href="module-transport.html">transport</a></li></ul><h3>Classes</h3><ul><li><a href="Crypto.html">Crypto</a></li><li><a href="Field.html">Field</a></li><li><a href="module-accounts.Account.html">Account</a></li><li><a href="module-accounts.Accounts.html">Accounts</a></li><li><a href="module-accounts.AccountsHttpApi.html">AccountsHttpApi</a></li><li><a href="module-accounts.Vote.html">Vote</a></li><li><a href="module-blocks.API.html">API</a></li><li><a href="module-blocks.Block.html">Block</a></li><li><a href="module-blocks.BlockReward.html">BlockReward</a></li><li><a href="module-blocks.Blocks.html">Blocks</a></li><li><a href="module-blocks.BlocksHttpApi.html">BlocksHttpApi</a></li><li><a href="module-blocks.Chain.html">Chain</a></li><li><a href="module-blocks.Process.html">Process</a></li><li><a href="module-blocks.Utils.html">Utils</a></li><li><a href="module-dapps.DApp.html">DApp</a></li><li><a href="module-dapps.DApps.html">DApps</a></li><li><a href="module-dapps.DappsHttpApi.html">DappsHttpApi</a></li><li><a href="module-dapps.InTransfer.html">InTransfer</a></li><li><a href="module-dapps.OutTransfer.html">OutTransfer</a></li><li><a href="module-delegates.Delegate.html">Delegate</a></li><li><a href="module-delegates.Delegates.html">Delegates</a></li><li><a href="module-delegates.DelegatesHttpApi.html">DelegatesHttpApi</a></li><li><a href="module-helpers.BigNumber.html">BigNumber</a></li><li><a href="module-helpers.Inserts.html">Inserts</a></li><li><a href="module-helpers.RoundChanges.html">RoundChanges</a></li><li><a href="module-helpers.Sequence.html">Sequence</a></li><li><a href="module-helpers.Validator.html">Validator</a></li><li><a href="module-helpers.z_schema.html">z_schema</a></li><li><a href="module-loader.Loader.html">Loader</a></li><li><a href="module-loader.LoaderHttpApi.html">LoaderHttpApi</a></li><li><a href="module-multisignatures.Multisignature.html">Multisignature</a></li><li><a href="module-multisignatures.Multisignatures.html">Multisignatures</a></li><li><a href="module-multisignatures.MultisignaturesHttpApi.html">MultisignaturesHttpApi</a></li><li><a href="module-peers.Peer.html">Peer</a></li><li><a href="module-peers.Peers.html">Peers</a></li><li><a href="module-peers.PeersHttpApi.html">PeersHttpApi</a></li><li><a href="module-rounds.Round.html">Round</a></li><li><a href="module-rounds.Rounds.html">Rounds</a></li><li><a href="module-server.Server.html">Server</a></li><li><a href="module-server.ServerHttpApi.html">ServerHttpApi</a></li><li><a href="module-signatures.Signature.html">Signature</a></li><li><a href="module-signatures.Signatures.html">Signatures</a></li><li><a href="module-signatures.SignaturesHttpApi.html">SignaturesHttpApi</a></li><li><a href="module-transactions.Transaction.html">Transaction</a></li><li><a href="module-transactions.TransactionPool.html">TransactionPool</a></li><li><a href="module-transactions.Transactions.html">Transactions</a></li><li><a href="module-transactions.TransactionsHttpApi.html">TransactionsHttpApi</a></li><li><a href="module-transactions.Transfer.html">Transfer</a></li><li><a href="module-transport.Broadcaster.html">Broadcaster</a></li><li><a href="module-transport.Transport.html">Transport</a></li><li><a href="module-transport.TransportHttpApi.html">TransportHttpApi</a></li><li><a href="Sql.html">Sql</a></li><li><a href="System.html">System</a></li></ul><h3>Events</h3><ul><li><a href="module-app.html#~event:cleanup">cleanup</a></li><li><a href="module-app.html#~event:exit">exit</a></li><li><a href="module-app.html#~event:SIGINT">SIGINT</a></li><li><a href="module-app.html#~event:SIGTERM">SIGTERM</a></li><li><a href="module-app.html#~event:uncaughtException">uncaughtException</a></li></ul><h3>Namespaces</h3><ul><li><a href="module-helpers.constants.html">constants</a></li><li><a href="module-helpers.ed.html">ed</a></li><li><a href="module-helpers.exceptions.html">exceptions</a></li><li><a href="module-helpers.module_helpers_httpApi-middleware.html">middleware</a></li><li><a href="module-helpers.module_helpers_slots.html">helpers/slots</a></li></ul><h3>Global</h3><ul><li><a href="global.html#aggregateBlocksReward">aggregateBlocksReward</a></li><li><a href="global.html#cleanup">cleanup</a></li><li><a href="global.html#deleteAfterBlock">deleteAfterBlock</a></li><li><a href="global.html#deleteLastBlock">deleteLastBlock</a></li><li><a href="global.html#generateBlock">generateBlock</a></li><li><a href="global.html#getBlockProgressLogger">getBlockProgressLogger</a></li><li><a href="global.html#getCommonBlock">getCommonBlock</a></li><li><a href="global.html#isFresh">isFresh</a></li><li><a href="global.html#isLoaded">isLoaded</a></li><li><a href="global.html#loadBlocksData">loadBlocksData</a></li><li><a href="global.html#loadBlocksFromPeer">loadBlocksFromPeer</a></li><li><a href="global.html#loadBlocksOffset">loadBlocksOffset</a></li><li><a href="global.html#loadBlocksPart">loadBlocksPart</a></li><li><a href="global.html#loadLastBlock">loadLastBlock</a></li><li><a href="global.html#onBlockchainReady">onBlockchainReady</a></li><li><a href="global.html#onReceiveBlock">onReceiveBlock</a></li><li><a href="global.html#processBlock">processBlock</a></li><li><a href="global.html#sandboxApi">sandboxApi</a></li><li><a href="global.html#verifyBlock">verifyBlock</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.4.3</a> on Thu May 18 2017 16:12:57 GMT-0300 (ART)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
