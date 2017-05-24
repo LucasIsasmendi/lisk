@@ -2,12 +2,11 @@
 
 var Router = require('../../helpers/router');
 var httpApi = require('../../helpers/httpApi');
-var config = require('../../config.json');
 
 // Constructor
 function DelegatesHttpApi (delegatesModule, app) {
 
-	var router = new Router(config.api);
+	var router = new Router();
 
 	router.map(delegatesModule.shared, {
 		'get /count': 'count',
@@ -22,8 +21,8 @@ function DelegatesHttpApi (delegatesModule, app) {
 	});
 
 	router.map(delegatesModule.internal, {
-		'get /forging/enable': 'forgingEnable',
-		'get /forging/disable': 'forgingDisable',
+		'post /forging/enable': 'forgingEnable',
+		'post /forging/disable': 'forgingDisable',
 		'get /forging/status': 'forgingStatus'
 	});
 

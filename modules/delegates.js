@@ -316,7 +316,9 @@ Delegates.prototype.getDelegates = function (query, cb) {
 		    totalSupply = __private.blockReward.calcSupply(lastBlock.height);
 
 		for (var i = 0; i < delegates.length; i++) {
+			// TODO: 'rate' property is deprecated and need to be removed after transitional period
 			delegates[i].rate = i + 1;
+			delegates[i].rank = i + 1;
 			delegates[i].approval = (delegates[i].vote / totalSupply) * 100;
 			delegates[i].approval = Math.round(delegates[i].approval * 1e2) / 1e2;
 
@@ -434,10 +436,6 @@ Delegates.prototype.isLoaded = function () {
 
 Delegates.prototype.internal = {
 	forgingEnable: function (req, cb) {
-		if (!checkIpInList(library.config.forging.access.whiteList, req.ip)) {
-			return setImmediate(cb, 'Access denied');
-		}
-
 		library.schema.validate(req.body, schema.enableForging, function (err) {
 			if (err) {
 				return setImmediate(cb, err[0].message);
@@ -471,10 +469,6 @@ Delegates.prototype.internal = {
 	},
 
 	forgingDisable: function (req, cb) {
-		if (!checkIpInList(library.config.forging.access.whiteList, req.ip)) {
-			return setImmediate(cb, 'Access denied');
-		}
-
 		library.schema.validate(req.body, schema.disableForging, function (err) {
 			if (err) {
 				return setImmediate(cb, err[0].message);
@@ -700,7 +694,8 @@ Delegates.prototype.shared = {
 				}
 
 				if (data.sortField) {
-					if (['approval', 'productivity', 'rate', 'vote'].indexOf(data.sortField) > -1) {
+					// TODO: 'rate' property is deprecated and need to be removed after transitional period
+					if (['approval', 'productivity', 'rate', 'rank', 'vote'].indexOf(data.sortField) > -1) {
 						data.delegates = data.delegates.sort(compareNumber);
 					} else if (['username', 'address', 'publicKey'].indexOf(data.sortField) > -1) {
 						data.delegates = data.delegates.sort(compareString);

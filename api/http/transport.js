@@ -3,20 +3,14 @@
 var Router = require('../../helpers/router');
 var httpApi = require('../../helpers/httpApi');
 var schema = require('../../schema/transport');
-var config = require('../../config.json');
 
 // Constructor
 function TransportHttpApi (transportModule, app, logger) {
 
-	var router = new Router(config.peers);
+	var router = new Router();
 
-	router.use(function (req, res, next) {
-		res.set(transportModule.headers());
-		if (transportModule.isLoaded()) {
-			return next();
-		}
-		res.status(500).send({success: false, error: 'Blockchain is loading'});
-	});
+	router.use(httpApi.middleware.attachResponseHeaders.bind(null, transportModule.headers));
+	router.use(httpApi.middleware.blockchainReady.bind(null, transportModule.isLoaded));
 
 	router.use(handshakeMiddleware);
 
@@ -55,21 +49,9 @@ function TransportHttpApi (transportModule, app, logger) {
 	app.use('/peer', router);
 
 	function handshakeMiddleware (req, res, next) {
-		var validateHeaders = function (headers, cb) {
-			return req.sanitize(headers, schema.headers, function (err, report, sanitized) {
-				if (err) {
-					return cb(err.toString());
-				} else if (!report.isValid) {
-					return cb(report.issues);
-				}
-
-				return cb();
-			})
-		};
-
 		transportModule.internal.handshake(req.ip, req.headers.port, req.headers, validateHeaders, function (err, peer) {
 			if (err) {
-				return res.status(500).send(err)
+				return res.status(500).send(err);
 			}
 
 			req.peer = peer;
@@ -79,6 +61,18 @@ function TransportHttpApi (transportModule, app, logger) {
 			}
 			return next();
 		});
+
+		function validateHeaders (headers, cb) {
+			return req.sanitize(headers, schema.headers, function (err, report, sanitized) {
+				if (err) {
+					return cb(err.toString());
+				} else if (!report.isValid) {
+					return cb(report.issues);
+				}
+
+				return cb();
+			});
+		}
 	}
 
 	function getCommonBlocksMiddleware (req, res, next) {
